@@ -45,29 +45,32 @@
       trackLongTasks: true,
       trackingConsent: 'granted',
       defaultPrivacyLevel: 'allow',
-      //allowFallbackToLocalStorage: 'true',
       sessionPersistence: 'local-storage',
       trackAnonymousUser: false
     });
     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
+
+    // Custom timings
+    document.addEventListener('DOMContentLoaded', function() {
+      window.DD_RUM && window.DD_RUM.addTiming('dom_content_loaded');
+    });
+
+    window.addEventListener('load', function() {
+      window.DD_RUM && window.DD_RUM.addTiming('pirates_plank_loaded');
+    });
   </script>
-</head>
 
   <!-- Datadog Logs Initialization -->
-  <html>
-  <head>
-    <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v6/datadog-logs.js"></script>
-    <script>
-      window.DD_LOGS &&
-        window.DD_LOGS.init({
-          clientToken: 'pub02889030d6147b469c6736c64e609b35',
-          site: 'datadoghq.com',
-          forwardErrorsToLogs: true,
-          sessionSampleRate: 100
-        })
-    </script>
-  </head>
-</html>
+  <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v6/datadog-logs.js"></script>
+  <script>
+    window.DD_LOGS && window.DD_LOGS.init({
+      clientToken: 'pub02889030d6147b469c6736c64e609b35',
+      site: 'datadoghq.com',
+      forwardErrorsToLogs: true,
+      sessionSampleRate: 100
+    });
+  </script>
+</head>
 
 <body>
 
@@ -78,7 +81,12 @@
   <header id="header">
     <div class="d-flex flex-column">
       <div class="profile">
-        <img src="/img/profile-pic.jpg" alt="Captain's Profile Pic" class="img-fluid rounded-circle" />
+        <img
+          src="/img/profile-pic.jpg"
+          alt="Captain's Profile Pic"
+          class="img-fluid rounded-circle"
+          onload="window.DD_RUM && window.DD_RUM.addTiming('profile_pic_loaded')"
+        />
         <h1 class="text-light"><a href="index.html">YO HO HO AND A BOTTLE OF RUM!</a></h1>
         <div class="social-links mt-3 text-center">
           <a href="https://open.spotify.com/user/ng1992?si=96d4cd71a7ce48f3" class="spotify"><i class="bi bi-spotify"></i></a>
@@ -96,21 +104,22 @@
     <div class="hero-container" data-aos="fade-in">
       <h1>Datadog RUM</h1>
       <p><span class="typed" data-typed-items="Arrr Matey!"></span></p>
-      <iframe 
-        width="560" 
-        height="315" 
-        src="https://www.youtube.com/embed/JImcvtJzIK8?autoplay=1" 
-        title="Why is the RUM gone?" 
-        frameborder="0" 
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-        allowfullscreen 
-        loading="lazy" 
-        sandbox="allow-scripts allow-same-origin allow-popups allow-presentation">
-      </iframe>
+      <iframe
+        width="560"
+        height="315"
+        src="https://www.youtube.com/embed/JImcvtJzIK8?autoplay=1"
+        title="Why is the RUM gone?"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+        loading="lazy"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+        onload="window.DD_RUM && window.DD_RUM.addTiming('youtube_iframe_loaded')"
+      ></iframe>
       <div class="mt-4">
-          <a href="/rumresources/" class="btn btn-warning btn-lg">
-            📊Getting started with Datadog RUM? Plunder the RUM Resources here
-          </a>
+        <a href="/rumresources/" class="btn btn-warning btn-lg">
+          📊Getting started with Datadog RUM? Plunder the RUM Resources here
+        </a>
       </div>
     </div>
   </section>

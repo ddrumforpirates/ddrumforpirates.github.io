@@ -29,7 +29,7 @@
   <link href="/css/main.css" rel="stylesheet" />
 
   <!-- Datadog RUM Initialization -->
-  <script src="https://www.datadoghq-browser-agent.com/us1/v6/datadog-rum.js"></script>
+  <script src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-rum.js" type="text/javascript" crossorigin></script>
   <script>
     window.DD_RUM && window.DD_RUM.init({
       clientToken: 'pub02889030d6147b469c6736c64e609b35',
@@ -37,7 +37,7 @@
       site: 'datadoghq.com',
       service: 'datadogrum-pirates-landing-page',
       env: 'test',
-      version: '1.1.0',
+      version: '2.0.0',
       sessionSampleRate: 100,
       sessionReplaySampleRate: 100,
       trackUserInteractions: true,

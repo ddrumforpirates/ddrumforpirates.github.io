@@ -45,7 +45,8 @@
       trackingConsent: 'granted',
       defaultPrivacyLevel: 'allow',
       sessionPersistence: 'local-storage',
-      trackAnonymousUser: false
+      trackAnonymousUser: false,
+      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
     });
 
     window.DD_RUM &&

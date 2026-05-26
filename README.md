@@ -50,6 +50,7 @@ Open each of the files below and replace the placeholder client token and applic
 - `📄 /index.html`
 - `📄 /games/tic.html`
 - `📄 /test/index.html`
+- `📄 /rumresources/index.html`
 
 ---
 

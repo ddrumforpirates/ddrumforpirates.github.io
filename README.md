@@ -30,6 +30,7 @@ You'll need both of the following — keep them handy!
 | 🪪 **Application ID** | RUM Application settings |
 
 > ⚠️ **Note:** The Client Token is _not_ the same as your Datadog Application Key or Datadog API Key.
+
 > ⚠️ **Note:** The Application ID is _not_ the same as your Datadog Application Key or Datadog API Key.
 
 ---

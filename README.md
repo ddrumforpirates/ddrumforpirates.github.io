@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://rum.naveengupta.info/images/datadogrum.png" width="120" alt="Datadog RUM Pirate logo" />
+<img src="https://rum.naveengupta.info/img/profile-pic.jpg" width="120" alt="Datadog RUM Pirate logo" />
 
 # ☠️ Datadog RUM for Pirates
 

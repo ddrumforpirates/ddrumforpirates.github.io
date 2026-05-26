@@ -44,10 +44,10 @@ Navigate to the RUM application creator in your Datadog Sandbox:
 
 You'll need both of these values in the next section:
 
-| Credential | Where to find it |
-|---|---|
-| 🔑 **Client Token** | RUM Application page |
-| 🪪 **Application ID** | RUM Application page |
+| Credential | 
+|---|
+| 🔑 **Client Token** |
+| 🪪 **Application ID** |
 
 > ⚠️ Neither of these is the same as your Datadog **Application Key** or **API Key**.
 

@@ -36,13 +36,16 @@
       site: 'datadoghq.com',
       service: 'datadogrum-pirates-rumresources',
       env: 'test',
+      version: '1.1.0',
       sessionSampleRate: 100,
       sessionReplaySampleRate: 100,
       trackUserInteractions: true,
       trackResources: true,
       trackLongTasks: true,
       trackingConsent: 'granted',
-      defaultPrivacyLevel: 'allow'
+      defaultPrivacyLevel: 'allow',
+      sessionPersistence: 'local-storage',
+      trackAnonymousUser: false
     });
 
     window.DD_RUM &&

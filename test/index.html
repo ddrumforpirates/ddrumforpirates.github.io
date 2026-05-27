@@ -48,6 +48,11 @@
       trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
     });
     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
+    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('client_time', {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      utc_offset: new Date().getTimezoneOffset(),
+      locale: navigator.language
+    });
   </script>
     <!-- Datadog Logs Initialization -->
   <html>

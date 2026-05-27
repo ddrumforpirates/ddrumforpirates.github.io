@@ -51,6 +51,11 @@
 
     window.DD_RUM &&
       window.DD_RUM.setGlobalContextProperty('page_type', 'rum_resources');
+      window.DD_RUM.setGlobalContextProperty('client_time', {
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        utc_offset: new Date().getTimezoneOffset(),
+        locale: navigator.language
+      });
   </script>
 
   <!-- Datadog Logs -->

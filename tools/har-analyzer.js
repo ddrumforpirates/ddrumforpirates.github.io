@@ -608,3 +608,4 @@ function handleFiles(files) {
     handleFiles(e.dataTransfer.files);
   });
 })();
+

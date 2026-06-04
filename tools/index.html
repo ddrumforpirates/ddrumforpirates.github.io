@@ -95,17 +95,16 @@
     </div>
   </header>
 
-  <!-- Hero -->
-  <section id="hero" class="d-flex align-items-center har-hero">
-    <div class="hero-container" data-aos="fade-in">
+  <!-- Main — margin-left:300px already applied by main.css #main rule -->
+  <main id="main">
+
+    <!-- Page hero: plain div, no #hero id, so main.css background image never fires -->
+    <div class="har-page-hero">
       <div class="har-eyebrow">Datadog HAR Analyzer</div>
       <h1>Inspect your HAR files</h1>
       <p class="har-hero-sub">Drop one or more <code>.har</code> files to extract Datadog cookies, RUM identifiers, intake errors, session replay signals, and more — entirely in your browser. Nothing is uploaded anywhere.</p>
     </div>
-  </section>
 
-  <!-- Main -->
-  <main id="main">
     <section class="har-section">
       <div class="har-container">
 
@@ -124,6 +123,7 @@
 
       </div>
     </section>
+
   </main>
 
   <!-- Back to Top -->

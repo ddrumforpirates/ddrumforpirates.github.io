@@ -609,9 +609,9 @@ function renderFileCard(analysis) {
   // ── SDK Health ──
   const sdkBlock = document.createElement('div');
   sdkBlock.className = 'section-block';
-  sdkBlock.innerHTML = `<div class="block-heading"><i class="bi bi-cpu"></i> SDK health</div>`;
+  sdkBlock.innerHTML = `<div class="block-heading"><i class="bi bi-cpu"></i> SDK health</div><p class="section-caveat"><i class="bi bi-info-circle"></i> SDK script requests (<code>datadog-rum.js</code>, <code>datadog-rum-slim.js</code>, <code>datadog-logs.js</code>) are only present in a HAR if the browser loaded them during the capture window. If the SDK was already cached or the HAR was started after page load, these will not appear. <strong>Best effort only.</strong></p>`;
   if (sdkLoads.length === 0) {
-    sdkBlock.innerHTML += `<p class="empty-note">No Datadog SDK script loads detected.</p>`;
+    sdkBlock.innerHTML += `<p class="empty-note">No SDK script loads found in this capture.</p>`;
   } else {
     const sdkGrid = document.createElement('div');
     sdkGrid.className = 'sdk-grid';
@@ -728,9 +728,9 @@ function renderFileCard(analysis) {
   // ── DD Cookies ──
   const cookiesBlock = document.createElement('div');
   cookiesBlock.className = 'section-block';
-  cookiesBlock.innerHTML = `<div class="block-heading"><i class="bi bi-shield-lock"></i> Datadog cookies</div>`;
+  cookiesBlock.innerHTML = `<div class="block-heading"><i class="bi bi-shield-lock"></i> Datadog cookies</div><p class="section-caveat"><i class="bi bi-info-circle"></i> Cookies are typically visible in <strong>DevTools &rsaquo; Application &rsaquo; Cookies</strong> rather than network request headers. HAR files may not include cookie headers depending on browser and capture settings. <strong>Best effort only.</strong></p>`;
   if (ddCookies.length === 0) {
-    cookiesBlock.innerHTML += `<p class="empty-note">No Datadog cookies detected.</p>`;
+    cookiesBlock.innerHTML += `<p class="empty-note">No Datadog cookies found in request/response headers. Check DevTools &rsaquo; Application &rsaquo; Cookies directly if needed.</p>`;
   } else {
     const wrap = document.createElement('div');
     wrap.className = 'table-wrap';
@@ -972,3 +972,4 @@ function handleFiles(files) { Array.from(files).forEach(processFile); }
   dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
   dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
 })();
+

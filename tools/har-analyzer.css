@@ -419,3 +419,28 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 
 #disclaimer-btn:hover { background: var(--primary-hover); }
 
+/* ── Section caveat note ── */
+.section-caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: #546e7a;
+  background: #fef9e7;
+  border: 1px solid #f9e79f;
+  border-radius: 6px;
+  padding: 8px 11px;
+  margin-bottom: 13px;
+  line-height: 1.5;
+}
+.section-caveat i { color: #9a6e00; flex-shrink: 0; margin-top: 1px; }
+.section-caveat code {
+  background: rgba(154,110,0,0.1);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.78rem;
+  font-family: 'Courier New', monospace;
+  color: #7a5500;
+}
+.section-caveat strong { color: #7a5500; }
+

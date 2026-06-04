@@ -74,6 +74,17 @@
 <!-- body class="tools" scopes .tools #hero overrides in har-analyzer.css -->
 <body class="tools">
 
+  <!-- Disclaimer Modal -->
+  <div id="disclaimer-overlay" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
+    <div id="disclaimer-modal">
+      <div id="disclaimer-icon"><i class="bi bi-robot"></i></div>
+      <h2 id="disclaimer-title">Heads up, matey!</h2>
+      <p>This HAR analyzer was built with the help of AI and may make mistakes.</p>
+      <p>Please use it <strong>with a grain of salt</strong> — warnings and errors presented may be red herrings and should be verified against the <a href="https://docs.datadoghq.com/real_user_monitoring/" target="_blank" rel="noopener">official Datadog RUM docs</a> before drawing conclusions.</p>
+      <button id="disclaimer-btn" onclick="document.getElementById('disclaimer-overlay').style.display='none'">Arr, I understand &mdash; take me in!</button>
+    </div>
+  </div>
+
   <!-- Mobile Nav Toggle -->
   <i class="bi bi-list mobile-nav-toggle d-xl-none"></i>
 

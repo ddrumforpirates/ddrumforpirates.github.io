@@ -341,3 +341,81 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 /* ── Cookie table url-cell ── */
 .data-table td.url-cell { max-width: 180px; }
 
+/* ── Disclaimer Modal ── */
+#disclaimer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(4, 11, 20, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+#disclaimer-modal {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 480px;
+  width: 100%;
+  padding: 2.25rem 2rem 2rem;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(4, 11, 20, 0.4);
+  animation: modal-in 0.2s ease;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+#disclaimer-icon {
+  font-size: 2.5rem;
+  color: var(--primary);
+  margin-bottom: 1rem;
+  line-height: 1;
+}
+
+#disclaimer-modal h2 {
+  font-family: 'Raleway', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--heading);
+  margin-bottom: 1rem;
+}
+
+#disclaimer-modal p {
+  font-size: 0.9rem;
+  color: #546e7a;
+  line-height: 1.65;
+  margin-bottom: 0.75rem;
+}
+
+#disclaimer-modal p:last-of-type { margin-bottom: 1.5rem; }
+
+#disclaimer-modal p strong { color: var(--heading); }
+
+#disclaimer-modal a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+#disclaimer-btn {
+  display: inline-block;
+  background: var(--primary);
+  color: #fff;
+  font-family: 'Raleway', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.65rem 1.75rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  letter-spacing: 0.02em;
+}
+
+#disclaimer-btn:hover { background: var(--primary-hover); }
+

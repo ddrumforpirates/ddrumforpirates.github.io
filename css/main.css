@@ -427,3 +427,9 @@ ul { list-style-type: none; padding-left: 0; }
   .rum-resources #main { margin-left: 0; }
 }
 
+/*--------------------------------------------------------------
+  Tools nav icon (added for /tools/ page)
+  Append this block to the END of css/main.css
+  --------------------------------------------------------------*/
+#header .profile .social-links a.tools { color: #fff; }
+#header .profile .social-links a.tools:hover { background: var(--primary); }

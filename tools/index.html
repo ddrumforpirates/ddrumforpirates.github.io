@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <title>Havana Club – Datadog RUM for Pirates</title>
-  <meta name="description" content="A swashbuckling guide to Real User Monitoring (RUM) with Datadog – powered by pirates and Havana Club rum.">
-  <meta name="keywords" content="Havana Club, Datadog, RUM, Real User Monitoring, pirates, JavaScript, telemetry, frontend monitoring">
-  <meta name="author" content="Naveen G.">
+  <title>HAR Analyzer – Havana Club Tools</title>
+  <meta name="description" content="Analyze HAR files for Datadog RUM cookies, session IDs, intake errors, and session replay requests." />
+  <meta name="author" content="Naveen G." />
   <meta name="theme-color" content="#000000" />
 
   <!-- Favicons -->
@@ -17,7 +16,7 @@
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700|Raleway:300,400,500,600,700|Poppins:300,400,500,600,700" rel="stylesheet" />
 
-  <!-- Vendor CSS Files -->
+  <!-- Vendor CSS -->
   <link href="/css/vendor/aos.css" rel="stylesheet" />
   <link href="/css/vendor/bootstrap.min.css" rel="stylesheet" />
   <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet" />
@@ -25,17 +24,20 @@
   <link href="/css/vendor/glightbox.min.css" rel="stylesheet" />
   <link href="/css/vendor/swiper-bundle.min.css" rel="stylesheet" />
 
-  <!-- Main CSS File -->
+  <!-- Main CSS -->
   <link href="/css/main.css" rel="stylesheet" />
 
-  <!-- Datadog RUM Initialization -->
+  <!-- HAR Analyzer CSS -->
+  <link href="/tools/har-analyzer.css" rel="stylesheet" />
+
+  <!-- Datadog RUM -->
   <script src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-rum.js" type="text/javascript" crossorigin></script>
   <script>
     window.DD_RUM && window.DD_RUM.init({
       clientToken: 'pub02889030d6147b469c6736c64e609b35',
       applicationId: '012a1d19-38df-4e55-9412-6ceb64e72490',
       site: 'datadoghq.com',
-      service: 'datadogrum-pirates-landing-page',
+      service: 'datadogrum-pirates-tools',
       env: 'test',
       version: '2.0.0',
       sessionSampleRate: 100,
@@ -49,24 +51,15 @@
       trackAnonymousUser: false,
       trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
     });
-    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
+    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('page_type', 'tools');
     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('client_time', {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       utc_offset: new Date().getTimezoneOffset(),
       locale: navigator.language
     });
-
-    // Custom timings
-    document.addEventListener('DOMContentLoaded', function() {
-      window.DD_RUM && window.DD_RUM.addTiming('dom_content_loaded');
-    });
-
-    window.addEventListener('load', function() {
-      window.DD_RUM && window.DD_RUM.addTiming('pirates_plank_loaded');
-    });
   </script>
 
-  <!-- Datadog Logs Initialization -->
+  <!-- Datadog Logs -->
   <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v6/datadog-logs.js"></script>
   <script>
     window.DD_LOGS && window.DD_LOGS.init({
@@ -83,63 +76,62 @@
   <!-- Mobile Nav Toggle -->
   <i class="bi bi-list mobile-nav-toggle d-xl-none"></i>
 
-  <!-- Header -->
+  <!-- Sidebar -->
   <header id="header">
     <div class="d-flex flex-column">
       <div class="profile">
-        <img
-          src="/img/profile-pic.jpg"
-          alt="Captain's Profile Pic"
-          class="img-fluid rounded-circle"
-          onload="window.DD_RUM && window.DD_RUM.addTiming('profile_pic_loaded')"
-        />
-        <h1 class="text-light"><a href="index.html">YO HO HO AND A BOTTLE OF RUM!</a></h1>
+        <img src="/img/profile-pic.jpg" alt="Captain's Profile Pic" class="img-fluid rounded-circle" />
+        <h1 class="text-light"><a href="/index.html">YO HO HO AND A BOTTLE OF RUM!</a></h1>
         <div class="social-links mt-3 text-center">
-          <a href="https://open.spotify.com/user/ng1992?si=96d4cd71a7ce48f3" class="spotify"><i class="bi bi-spotify"></i></a>
-          <a href="/games/tic.html" class="joystick"><i class="bi bi-controller"></i></a>
-          <a href="/test/index.html" class="wrench"><i class="bi bi-wrench"></i></a>
-          <a href="/rumresources/" class="rum"><i class="bi bi-bar-chart-line"></i></a>
-          <a href="/tools/" class="tools" title="Tools"><i class="bi bi-tools"></i></a>
-          <a href="#" onclick="alert('Arrr, ye walk the plank, matey!!');" class="bug"><i class="bi bi-bug"></i></a>
+          <a href="/index.html" class="home" title="Home"><i class="bx bx-home"></i></a>
+          <a href="https://open.spotify.com/user/ng1992?si=96d4cd71a7ce48f3" class="spotify" target="_blank" rel="noopener" title="Spotify"><i class="bi bi-spotify"></i></a>
+          <a href="/games/tic.html" class="joystick" title="Games"><i class="bi bi-controller"></i></a>
+          <a href="/test/index.html" class="wrench" title="Test"><i class="bi bi-wrench"></i></a>
+          <a href="/rumresources/" class="rum" title="RUM Resources"><i class="bi bi-bar-chart-line"></i></a>
+          <a href="/tools/" class="tools active" title="Tools"><i class="bi bi-tools"></i></a>
+          <a href="#" onclick="alert('Arrr, ye walk the plank, matey!!');" class="bug" title="Bug"><i class="bi bi-bug"></i></a>
         </div>
       </div>
     </div>
   </header>
 
-  <!-- Hero Section -->
-  <section id="hero" class="d-flex flex-column justify-content-center align-items-center">
+  <!-- Hero -->
+  <section id="hero" class="d-flex align-items-center har-hero">
     <div class="hero-container" data-aos="fade-in">
-      <h1>Datadog RUM</h1>
-      <p><span class="typed" data-typed-items="Arrr Matey!"></span></p>
-      <iframe
-        width="560"
-        height="315"
-        src="https://www.youtube.com/embed/JImcvtJzIK8?autoplay=1"
-        title="Why is the RUM gone?"
-        frameborder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        allowfullscreen
-        loading="lazy"
-        sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-        onload="window.DD_RUM && window.DD_RUM.addTiming('youtube_iframe_loaded')"
-      ></iframe>
-      <div class="mt-4">
-        <a href="/rumresources/" class="btn btn-warning btn-lg">
-          📊Getting started with Datadog RUM? Plunder the RUM Resources here
-        </a>
-      </div>
+      <div class="har-eyebrow">Datadog HAR Analyzer</div>
+      <h1>Inspect your HAR files</h1>
+      <p class="har-hero-sub">Drop one or more <code>.har</code> files to extract Datadog cookies, RUM identifiers, intake errors, session replay signals, and more — entirely in your browser. Nothing is uploaded anywhere.</p>
     </div>
   </section>
 
-  <!-- Main Placeholder -->
+  <!-- Main -->
   <main id="main">
-    <!-- Future content goes here -->
+    <section class="har-section">
+      <div class="har-container">
+
+        <!-- Drop Zone -->
+        <div id="drop-zone" role="region" aria-label="HAR file upload area">
+          <input type="file" id="file-input" accept=".har" multiple aria-label="Select HAR files" />
+          <div class="drop-icon">
+            <i class="bi bi-file-earmark-arrow-up"></i>
+          </div>
+          <div class="drop-title">Drop <code>.har</code> files here or <span class="drop-cta">click to browse</span></div>
+          <div class="drop-sub">Multiple files supported &nbsp;·&nbsp; Stays in your browser &nbsp;·&nbsp; .har only</div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" aria-live="polite"></div>
+
+      </div>
+    </section>
   </main>
 
   <!-- Back to Top -->
-  <a href="#" class="back-to-top d-flex align-items-center justify-content-center"><i class="bi bi-arrow-up-short"></i></a>
+  <a href="#" class="back-to-top d-flex align-items-center justify-content-center">
+    <i class="bi bi-arrow-up-short"></i>
+  </a>
 
-  <!-- Vendor JS Files -->
+  <!-- Vendor JS -->
   <script src="/js/vendor/purecounter.js"></script>
   <script src="/js/vendor/aos.js"></script>
   <script src="/js/vendor/bootstrap.bundle.min.js"></script>
@@ -152,6 +144,9 @@
 
   <!-- Main JS -->
   <script src="/js/main.js"></script>
+
+  <!-- HAR Analyzer JS -->
+  <script src="/tools/har-analyzer.js"></script>
 
 </body>
 </html>

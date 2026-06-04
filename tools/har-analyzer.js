@@ -256,9 +256,22 @@ function buildWarnings(analysis) {
   }
 
   // ── Large payloads ──
-  const largePayloads = [...intakeSuccess, ...intakeErrors].filter(e => e.reqBodySize > 1_000_000);
-  if (largePayloads.length > 0) {
-    warns.push({ sev: 'warn', cat: 'Payload', msg: `${largePayloads.length} intake request(s) have payload > 1MB — oversized payloads may be rejected by intake.` });
+  // The Datadog docs define the threshold as 3KiB for global context/user info/feature flags.
+  // compressIntakeRequest (SDK >= v5.3.0) raises this to 16KiB.
+  // Requests beyond RUM technical limits are rejected by intake.
+  const compress = initConfig && initConfig.compressIntakeRequest;
+  const softLimit = compress ? 16384 : 3072; // 16KiB compressed, 3KiB uncompressed
+  const hardLimit = 5242880;                 // 5MB absolute ceiling
+  const allIntake = [...intakeSuccess, ...intakeErrors];
+  const overSoft = allIntake.filter(e => e.reqBodySize > softLimit && e.reqBodySize <= hardLimit);
+  const overHard = allIntake.filter(e => e.reqBodySize > hardLimit);
+  if (overHard.length > 0) {
+    warns.push({ sev: 'error', cat: 'Payload', msg: overHard.length + ' intake request(s) exceed 5MB and will likely be rejected by the Datadog intake.' });
+  }
+  if (overSoft.length > 0) {
+    const limitLabel = compress ? '16KiB' : '3KiB';
+    const compressHint = compress ? '' : ' Consider enabling compressIntakeRequest (SDK v5.3.0+) to extend the limit to 16KiB.';
+    warns.push({ sev: 'warn', cat: 'Payload', msg: overSoft.length + ' intake request(s) exceed the recommended ' + limitLabel + ' threshold. Large global context, user info, or feature flag data can impact performance on slow connections.' + compressHint, detail: 'docs.datadoghq.com/real_user_monitoring/application_monitoring/browser/troubleshooting/#customer-data-exceeds-the-recommended-threshold-warning' });
   }
 
   // ── SDK load timing ──
@@ -959,4 +972,3 @@ function handleFiles(files) { Array.from(files).forEach(processFile); }
   dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
   dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
 })();
-

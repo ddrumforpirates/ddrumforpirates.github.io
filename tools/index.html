@@ -71,7 +71,8 @@
   </script>
 </head>
 
-<body>
+<!-- body class="tools" scopes .tools #hero overrides in har-analyzer.css -->
+<body class="tools">
 
   <!-- Mobile Nav Toggle -->
   <i class="bi bi-list mobile-nav-toggle d-xl-none"></i>
@@ -95,16 +96,17 @@
     </div>
   </header>
 
-  <!-- Main — margin-left:300px already applied by main.css #main rule -->
-  <main id="main">
-
-    <!-- Page hero: plain div, no #hero id, so main.css background image never fires -->
-    <div class="har-page-hero">
+  <!-- Hero: background image kept, height/layout adjusted via .tools #hero in har-analyzer.css -->
+  <section id="hero" class="d-flex align-items-center">
+    <div class="hero-container" data-aos="fade-in">
       <div class="har-eyebrow">Datadog HAR Analyzer</div>
       <h1>Inspect your HAR files</h1>
       <p class="har-hero-sub">Drop one or more <code>.har</code> files to extract Datadog cookies, RUM identifiers, intake errors, session replay signals, and more — entirely in your browser. Nothing is uploaded anywhere.</p>
     </div>
+  </section>
 
+  <!-- Main -->
+  <main id="main">
     <section class="har-section">
       <div class="har-container">
 
@@ -123,7 +125,6 @@
 
       </div>
     </section>
-
   </main>
 
   <!-- Back to Top -->

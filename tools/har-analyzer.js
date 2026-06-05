@@ -572,7 +572,7 @@ function renderFileCard(analysis) {
     filename, creator, totalEntries, ddCookies, intakeErrors, intakeSuccess,
     replayRequests, sessionId, sessionIdSource, appId, appIdSource,
     sdkLoads, initConfig, sdkInitCount, eventTypeCounts,
-    endpointHits, warnings, firstIntakeOffsetMs,
+    endpointHits, warnings, firstIntakeOffsetMs, apmCorrelations,
   } = analysis;
 
   const errorWarns = warnings.filter(w => w.sev === 'error');

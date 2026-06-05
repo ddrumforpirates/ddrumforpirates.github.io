@@ -37,7 +37,11 @@ const DD_SDK_PATTERNS = [
   /datadoghq-browser-agent\.com.*datadog-rum-slim/,
 ];
 
-const DD_COOKIE_NAMES = ['_dd_s', '_dd_s_v2', 'dd_site_auth', '_datadog_session', '_dd_r'];
+// Per docs.datadoghq.com/real_user_monitoring/application_monitoring/browser/troubleshooting/#rum-cookies
+// Only _dd_s is the current RUM session cookie.
+// _dd_l, _dd_r, _dd are deprecated predecessors replaced by _dd_s in recent SDK versions.
+// dd_site_test_* and dd_cookie_test_* are transient (expire instantly) — unlikely in a HAR.
+const DD_COOKIE_NAMES = ['_dd_s', '_dd_s_v2', '_dd_r', '_dd_l', '_dd'];
 
 const KNOWN_OFFICIAL_SDK_HOSTS = [
   'www.datadoghq-browser-agent.com',
@@ -295,6 +299,19 @@ function buildWarnings(analysis) {
     warns.push({ sev: 'info', cat: 'Proxy', msg: `${proxied.length} intake request(s) include x-forwarded-for — traffic appears to be routed through a proxy. This can affect geolocation accuracy in RUM.` });
   }
 
+  // ── APM correlation ──
+  const apmCors = analysis.apmCorrelations || [];
+  if (apmCors.length > 0) {
+    const allUnsampled = apmCors.every(c => c.sampled === false);
+    if (allUnsampled) {
+      warns.push({ sev: 'warn', cat: 'APM', msg: 'RUM is injecting trace headers but all requests have x-datadog-sampling-priority: 0. Traces will not be retained. Check APM trace retention filters or the traceSampleRate in your allowedTracingUrls config.' });
+    }
+    const missingOrigin = apmCors.filter(c => c.origin !== 'rum');
+    if (missingOrigin.length > 0) {
+      warns.push({ sev: 'warn', cat: 'APM', msg: `${missingOrigin.length} correlated request(s) are missing x-datadog-origin: rum — these traces may not be linked back to RUM in the Datadog UI.` });
+    }
+  }
+
   return warns;
 }
 
@@ -467,10 +484,38 @@ function analyzeHAR(harData, filename) {
 
   const firstIntakeOffsetMs = (pageStartTime && firstIntakeTime) ? firstIntakeTime - pageStartTime : null;
   const eventTypeCounts = extractEventTypes(entries);
+
+  // ── APM correlation: scan all non-intake XHR/fetch for propagation headers ──
+  // RUM injects these on requests to allowedTracingUrls to link frontend resources to APM traces.
+  // Docs: docs.datadoghq.com/real_user_monitoring/correlate_with_other_telemetry/apm/
+  const apmCorrelations = [];
+  entries.forEach(entry => {
+    const url    = entry.request?.url || '';
+    if (isIntakeUrl(url) || isSdkUrl(url)) return; // skip intake/SDK — we only want app requests
+    const reqHdrs = entry.request?.headers || [];
+    const traceId    = reqHdrs.find(h => h.name.toLowerCase() === 'x-datadog-trace-id');
+    const parentId   = reqHdrs.find(h => h.name.toLowerCase() === 'x-datadog-parent-id');
+    const origin     = reqHdrs.find(h => h.name.toLowerCase() === 'x-datadog-origin');
+    const sampling   = reqHdrs.find(h => h.name.toLowerCase() === 'x-datadog-sampling-priority');
+    const traceparent= reqHdrs.find(h => h.name.toLowerCase() === 'traceparent');
+    if (!traceId && !traceparent) return; // no correlation headers — not an instrumented request
+    apmCorrelations.push({
+      url,
+      method:       entry.request?.method || 'GET',
+      status:       entry.response?.status || 0,
+      traceId:      traceId?.value     || null,
+      parentId:     parentId?.value    || null,
+      origin:       origin?.value      || null,  // should be 'rum'
+      sampling:     sampling?.value    || null,  // '1' = sampled, '0' = not sampled
+      traceparent:  traceparent?.value || null,
+      sampled:      sampling ? sampling.value === '1' : null,
+    });
+  });
+
   const warnings = buildWarnings({
     sdkLoads, initConfig, intakeErrors, intakeSuccess, replayRequests,
     sessionId, ddCookies, endpointHits, sdkInitCount,
-    totalEntries: entries.length, firstIntakeOffsetMs,
+    totalEntries: entries.length, firstIntakeOffsetMs, apmCorrelations,
   });
 
   return {
@@ -480,7 +525,7 @@ function analyzeHAR(harData, filename) {
     sessionId, sessionIdSource, appId, appIdSource,
     sdkLoads, initConfig, sdkInitCount,
     eventTypeCounts, endpointHits, warnings,
-    firstIntakeOffsetMs,
+    firstIntakeOffsetMs, apmCorrelations,
   };
 }
 
@@ -724,6 +769,64 @@ function renderFileCard(analysis) {
     evtBlock.appendChild(evtRow);
     card.appendChild(evtBlock);
   }
+
+  // ── RUM <> APM Correlation ──
+  const apmBlock = document.createElement('div');
+  apmBlock.className = 'section-block';
+  apmBlock.innerHTML = `<div class="block-heading"><i class="bi bi-diagram-3"></i> RUM &harr; APM correlation</div>`;
+
+  if (apmCorrelations.length === 0) {
+    apmBlock.innerHTML += `<p class="empty-note">No APM propagation headers found on outgoing requests. Either <code>allowedTracingUrls</code> is not configured, no matching requests were captured, or the HAR was taken before the RUM SDK injected headers.</p>`;
+  } else {
+    const sampledCount   = apmCorrelations.filter(c => c.sampled === true).length;
+    const unsampledCount = apmCorrelations.filter(c => c.sampled === false).length;
+    const w3cCount       = apmCorrelations.filter(c => !!c.traceparent).length;
+    const ddCount        = apmCorrelations.filter(c => !!c.traceId).length;
+
+    const apmSummary = document.createElement('div');
+    apmSummary.className = 'apm-summary';
+    apmSummary.innerHTML = `
+      <div class="apm-stat"><span class="apm-stat-val">${apmCorrelations.length}</span><span class="apm-stat-label">correlated requests</span></div>
+      <div class="apm-stat"><span class="apm-stat-val v-success">${sampledCount}</span><span class="apm-stat-label">sampled (priority=1)</span></div>
+      <div class="apm-stat"><span class="apm-stat-val">${unsampledCount}</span><span class="apm-stat-label">not sampled (priority=0)</span></div>
+      <div class="apm-stat"><span class="apm-stat-val">${ddCount}</span><span class="apm-stat-label">Datadog headers</span></div>
+      <div class="apm-stat"><span class="apm-stat-val">${w3cCount}</span><span class="apm-stat-label">W3C traceparent</span></div>
+    `;
+    apmBlock.appendChild(apmSummary);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const table = document.createElement('table');
+    table.className = 'data-table';
+    table.innerHTML = `<thead><tr><th>URL</th><th>Method</th><th>Status</th><th>Trace ID</th><th>Origin</th><th>Sampled</th><th>W3C traceparent</th></tr></thead>`;
+    const tbody = document.createElement('tbody');
+    apmCorrelations.forEach(c => {
+      const sampledLabel = c.sampled === true ? '<span style="color:#1e8449;font-weight:700">Yes</span>' : c.sampled === false ? '<span style="color:#c0392b">No</span>' : '–';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono url-cell" title="${escHtml(c.url)}">${escHtml(c.url)}</td>
+        <td>${escHtml(c.method)}</td>
+        <td>${escHtml(String(c.status || '–'))}</td>
+        <td class="mono" title="${escHtml(c.traceId || '')}">${c.traceId ? escHtml(c.traceId) : '–'}</td>
+        <td>${c.origin ? `<code>${escHtml(c.origin)}</code>` : '–'}</td>
+        <td>${sampledLabel}</td>
+        <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(c.traceparent || '')}">${c.traceparent ? escHtml(c.traceparent) : '–'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    apmBlock.appendChild(wrap);
+
+    // Warning if no sampled requests despite having correlations
+    if (sampledCount === 0 && apmCorrelations.length > 0) {
+      apmBlock.innerHTML += `<p class="section-caveat" style="margin-top:10px"><i class="bi bi-exclamation-triangle"></i> All correlated requests have <strong>x-datadog-sampling-priority: 0</strong> — traces are being sent but not retained. Check your APM trace retention filters or <code>traceSampleRate</code> in <code>allowedTracingUrls</code>.</p>`;
+    }
+    if (ddCount > 0 && w3cCount === 0) {
+      apmBlock.innerHTML += `<p class="section-caveat" style="margin-top:8px"><i class="bi bi-info-circle"></i> Only Datadog-format headers detected. If your backend uses W3C Trace Context, consider adding <code>traceparent</code> propagation via <code>allowedTracingUrls</code> header type config.</p>`;
+    }
+  }
+  card.appendChild(apmBlock);
 
   // ── DD Cookies ──
   const cookiesBlock = document.createElement('div');

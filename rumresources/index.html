@@ -48,7 +48,7 @@
       trackAnonymousUser: false,
       trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
     });
-
+    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
     window.DD_RUM &&
       window.DD_RUM.setGlobalContextProperty('page_type', 'rum_resources');
       window.DD_RUM.setGlobalContextProperty('client_time', {

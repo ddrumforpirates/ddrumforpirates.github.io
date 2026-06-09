@@ -73,6 +73,7 @@ Open each of the files below and replace the placeholder client token and applic
 | `/games/tic.html` | 🎮 Tic-tac-toe game |
 | `/test/index.html` | 🧪 Test page |
 | `/rumresources/index.html` | 📊 RUM Resources page |
+|`/tools/index.html`| 🛠️ HAR Analyzer Tool |
 
 ---
 

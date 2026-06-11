@@ -6,6 +6,11 @@
 
 /* ── Hero: keep the background, fix layout ──
    .tools #hero beats #hero specificity-wise     */
+
+.tools #main {
+  margin-left: 0 !important;
+}
+
 .tools #hero {
   height: auto;
   min-height: 38vh;

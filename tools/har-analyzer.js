@@ -838,7 +838,10 @@ function processQueryFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     let data;
-    try { data = JSON.parse(e.target.result); }
+    try {
+      const sanitized = e.target.result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+      data = JSON.parse(sanitized);
+    }
     catch {
       const n = document.createElement('div');
       n.className = 'parse-error';
@@ -1324,7 +1327,10 @@ function processFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     let data;
-    try { data = JSON.parse(e.target.result); }
+    try {
+      const sanitized = e.target.result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+      data = JSON.parse(sanitized);
+    }
     catch {
       const n = document.createElement('div');
       n.className = 'parse-error';
@@ -1385,4 +1391,3 @@ function handleQueryFiles(files)   { Array.from(files).forEach(processQueryFile)
   dropZoneQ.addEventListener('dragleave', e => { if (!dropZoneQ.contains(e.relatedTarget)) dropZoneQ.classList.remove('drag-over'); });
   dropZoneQ.addEventListener('drop', e => { e.preventDefault(); dropZoneQ.classList.remove('drag-over'); handleQueryFiles(e.dataTransfer.files); });
 })();
-

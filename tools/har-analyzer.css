@@ -12,6 +12,7 @@
   display: flex;
   align-items: center;
   padding: 3.5rem 0;
+  background-attachment: scroll;
 }
 
 .tools #hero .hero-container {
@@ -27,7 +28,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--primary);
+  color: rgba(255, 255, 255, 0.75);
   margin-bottom: 0.5rem;
 }
 
@@ -68,10 +69,11 @@
 .har-container {
   padding: 0 2rem;
   max-width: 880px;
+  margin-left: 300px;
 }
 
 @media (max-width: 1199px) {
-  .har-container { padding: 0 1rem; }
+  .har-container { padding: 0 1rem; margin-left: 0; }
 }
 
 /* ── Drop Zone ── */

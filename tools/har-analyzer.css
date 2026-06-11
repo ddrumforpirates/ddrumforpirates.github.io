@@ -75,6 +75,8 @@
 
 .har-container {
   max-width: 660px;
+  margin-left: 0;
+  margin-right: auto;
 }
 
 @media (max-width: 1199px) {
@@ -95,6 +97,7 @@
   margin-bottom: 2.5rem;
   overflow: hidden;
   max-width: 620px;
+  margin-left: 0;
 }
 #drop-zone:hover,
 #drop-zone.drag-over {

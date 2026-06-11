@@ -13,6 +13,12 @@
   align-items: center;
   padding: 3.5rem 0;
   background-attachment: scroll;
+  background-image: none;
+  background: #6b2fa0;
+}
+
+.tools #hero:before {
+  display: none;
 }
 
 .tools #hero .hero-container {

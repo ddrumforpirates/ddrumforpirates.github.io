@@ -825,6 +825,65 @@ function renderQueryCard(entry) {
 }
 
 // Process a HAR file for the Query Inspector tab
+// ── HAR sanitizer ─────────────────────────────────────────────────────────
+// Some HARs (especially from Chrome) contain:
+// 1. Invalid \uXXXX escapes in binary response/request bodies
+// 2. Raw binary bytes in "text" fields (multipart/octet-stream payloads)
+// 3. Truncated JSON (capture stopped mid-entry)
+// This function cleans all of these before JSON.parse.
+
+function sanitizeHAR(raw) {
+  const lines = raw.split('\n');
+  const cleaned = [];
+  const REPLACEMENT_CHAR = '\ufffd';
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    const stripped = line.trimStart();
+    const isLast = i === lines.length - 1;
+
+    if (stripped.startsWith('"text"') && line.includes(REPLACEMENT_CHAR)) {
+      const indent = line.length - stripped.length;
+      const trailing = stripped.trimEnd().endsWith(',') ? ',' : '';
+
+      if (isLast) {
+        // Truncated file — close the open JSON structures
+        cleaned.push(' '.repeat(indent) + '"text": "[binary content removed]"');
+        cleaned.push(' '.repeat(indent - 2) + '}');    // close postData
+        cleaned.push(' '.repeat(indent - 4) + '},');   // close request
+        cleaned.push(' '.repeat(indent - 4) + '"response": {');
+        cleaned.push(' '.repeat(indent) + '"status": 0,');
+        cleaned.push(' '.repeat(indent) + '"statusText": "",');
+        cleaned.push(' '.repeat(indent) + '"httpVersion": "http/2.0",');
+        cleaned.push(' '.repeat(indent) + '"headers": [],');
+        cleaned.push(' '.repeat(indent) + '"cookies": [],');
+        cleaned.push(' '.repeat(indent) + '"content": {"size": 0, "mimeType": ""},');
+        cleaned.push(' '.repeat(indent) + '"redirectURL": "",');
+        cleaned.push(' '.repeat(indent) + '"headersSize": -1,');
+        cleaned.push(' '.repeat(indent) + '"bodySize": -1');
+        cleaned.push(' '.repeat(indent - 4) + '},');   // close response
+        cleaned.push(' '.repeat(indent - 4) + '"cache": {},');
+        cleaned.push(' '.repeat(indent - 4) + '"timings": {"send": 0, "wait": 0, "receive": 0},');
+        cleaned.push(' '.repeat(indent - 4) + '"time": 0');
+        cleaned.push(' '.repeat(indent - 6) + '}');    // close entry
+        cleaned.push(' '.repeat(indent - 8) + ']');    // close entries
+        cleaned.push(' '.repeat(indent - 10) + '}');   // close log
+        cleaned.push('}');                              // close root
+      } else {
+        cleaned.push(' '.repeat(indent) + '"text": "[binary content removed]"' + trailing);
+      }
+      continue;
+    }
+
+    cleaned.push(line);
+  }
+
+  let result = cleaned.join('\n');
+  // Fix invalid \uXXXX escapes (not followed by exactly 4 hex digits)
+  result = result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+  return result;
+}
+
 function processQueryFile(file) {
   const container = document.getElementById('query-results');
   if (!file.name.toLowerCase().endsWith('.har')) {
@@ -839,8 +898,7 @@ function processQueryFile(file) {
   reader.onload = e => {
     let data;
     try {
-      const sanitized = e.target.result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
-      data = JSON.parse(sanitized);
+      data = JSON.parse(sanitizeHAR(e.target.result));
     }
     catch {
       const n = document.createElement('div');
@@ -1328,8 +1386,7 @@ function processFile(file) {
   reader.onload = e => {
     let data;
     try {
-      const sanitized = e.target.result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
-      data = JSON.parse(sanitized);
+      data = JSON.parse(sanitizeHAR(e.target.result));
     }
     catch {
       const n = document.createElement('div');

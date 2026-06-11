@@ -70,6 +70,11 @@
   color: #fff;
 }
 
+.tools #main{
+  margin-left: 0 !important;
+  background: #fff;
+}
+
 /* Responsive */
 @media (max-width: 1199px) {
   .tools #hero .hero-container { margin-left: 0; padding: 0 1rem; }
@@ -162,6 +167,7 @@
   opacity: 0;
   cursor: pointer;
   font-size: 0;
+  color: transparent;
 }
 .drop-icon { font-size: 2.5rem; color: var(--primary); margin-bottom: 0.75rem; pointer-events: none; }
 .drop-title { font-size: 1rem; font-weight: 600; color: var(--heading); margin-bottom: 0.35rem; pointer-events: none; }

@@ -70,11 +70,6 @@
   color: #fff;
 }
 
-.tools #main{
-  margin-left: 0 !important;
-  background: #fff;
-}
-
 /* Responsive */
 @media (max-width: 1199px) {
   .tools #hero .hero-container { margin-left: 0; padding: 0 1rem; }
@@ -167,7 +162,6 @@
   opacity: 0;
   cursor: pointer;
   font-size: 0;
-  color: transparent;
 }
 .drop-icon { font-size: 2.5rem; color: var(--primary); margin-bottom: 0.75rem; pointer-events: none; }
 .drop-title { font-size: 1rem; font-weight: 600; color: var(--heading); margin-bottom: 0.35rem; pointer-events: none; }
@@ -825,3 +819,69 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 }
 .qi-raw-pre.open { display: block; }
 
+/* ── Metric card elements (Query Inspector) ── */
+.qi-metric-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: var(--heading);
+}
+
+.qi-status-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-left: auto;
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+}
+.qi-status-badge.ok  { background: #eafaf1; color: #1e8449; border: 1px solid #a9dfbf; }
+.qi-status-badge.err { background: #fdecea; color: #c0392b; border: 1px solid #f5c6c2; }
+
+.qi-endpoint-badge.metric_volume { background: #fef9e7; color: #9a6e00; border: 1px solid #f9e79f; }
+.qi-endpoint-badge.metric_tags   { background: #eafaf1; color: #1e8449; border: 1px solid #a9dfbf; }
+.qi-endpoint-badge.metric_ai     { background: #e8f4fb; color: #1a6fa8; border: 1px solid #aed6ef; }
+
+.qi-metric-block {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qi-metric-row {
+  display: flex;
+  gap: 12px;
+  font-size: 0.82rem;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--card-border);
+}
+.qi-metric-row:last-child { border-bottom: none; }
+
+.qi-metric-key {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-width: 150px;
+  flex-shrink: 0;
+}
+
+.qi-metric-val {
+  font-size: 0.82rem;
+  color: var(--text);
+  word-break: break-word;
+  flex: 1;
+}
+
+.qi-metric-vol {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-family: 'Raleway', sans-serif;
+  color: var(--primary);
+  line-height: 1;
+}

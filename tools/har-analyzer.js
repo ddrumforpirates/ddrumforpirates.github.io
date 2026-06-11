@@ -46,11 +46,14 @@ const KNOWN_OFFICIAL_SDK_HOSTS = [
 
 // Query Inspector endpoint patterns
 const QI_ENDPOINTS = [
-  { pattern: /\/api\/ui\/query\/timeseries/, type: 'timeseries', label: 'Timeseries' },
-  { pattern: /\/api\/ui\/query\/scalar/,     type: 'scalar',     label: 'Scalar' },
-  { pattern: /\/api\/v1\/query/,             type: 'timeseries', label: 'Timeseries (v1)' },
-  { pattern: /\/api\/v2\/query\/timeseries/, type: 'timeseries', label: 'Timeseries (v2)' },
-  { pattern: /\/api\/v2\/query\/scalar/,     type: 'scalar',     label: 'Scalar (v2)' },
+  { pattern: /\/api\/ui\/query\/timeseries/,          type: 'timeseries',    label: 'Timeseries' },
+  { pattern: /\/api\/ui\/query\/scalar/,               type: 'scalar',        label: 'Scalar' },
+  { pattern: /\/api\/v1\/query/,                       type: 'timeseries',    label: 'Timeseries (v1)' },
+  { pattern: /\/api\/v2\/query\/timeseries/,           type: 'timeseries',    label: 'Timeseries (v2)' },
+  { pattern: /\/api\/v2\/query\/scalar/,               type: 'scalar',        label: 'Scalar (v2)' },
+  { pattern: /\/api\/v2\/metrics\/[^/?]+\/volumes/,    type: 'metric_volume', label: 'Metric Volumes' },
+  { pattern: /\/api\/ui\/metrics\/all-tags\//,         type: 'metric_tags',   label: 'Metric Metadata' },
+  { pattern: /\/api\/ui\/metrics\/ai-generated/,       type: 'metric_ai',     label: 'Metric Description' },
 ];
 
 // ── Utilities ──────────────────────────────────────────────────────────────
@@ -147,6 +150,23 @@ function extractInitConfig(scriptText) {
       .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, '$1"$2":');
     return JSON.parse(obj);
   } catch { return null; }
+}
+
+// Extract metric name from URL path
+function extractMetricNameFromUrl(url) {
+  try {
+    const path = new URL(url).pathname;
+    // /api/v2/metrics/{name}/volumes
+    const volMatch = path.match(/\/api\/v2\/metrics\/([^/]+)\/volumes/);
+    if (volMatch) return decodeURIComponent(volMatch[1]);
+    // /api/ui/metrics/all-tags/{name}
+    const tagsMatch = path.match(/\/api\/ui\/metrics\/all-tags\/([^/?]+)/);
+    if (tagsMatch) return decodeURIComponent(tagsMatch[1]);
+    // /api/ui/metrics/ai-generated-metadata/{name}
+    const aiMatch = path.match(/\/api\/ui\/metrics\/ai-generated[^/]*\/([^/?]+)/);
+    if (aiMatch) return decodeURIComponent(aiMatch[1]);
+  } catch {}
+  return null;
 }
 
 // ── Warnings builder ───────────────────────────────────────────────────────
@@ -420,8 +440,8 @@ function parseQueryEntries(harData) {
   const results = [];
 
   entries.forEach(entry => {
-    const url = entry.request?.url || '';
-    const ep  = detectQueryEndpoint(url);
+    const url    = entry.request?.url || '';
+    const ep     = detectQueryEndpoint(url);
     if (!ep) return;
 
     const reqText  = entry.request?.postData?.text || '';
@@ -429,6 +449,7 @@ function parseQueryEntries(harData) {
     const reqJSON  = tryParseJSON(reqText);
     const respJSON = tryParseJSON(respText);
 
+    // For metric endpoints (GET), respJSON is enough; for query endpoints we need at least one
     if (!reqJSON && !respJSON) return;
 
     results.push({
@@ -454,10 +475,10 @@ function extractQueriesFromRequest(reqJSON, type) {
 
   const out = [];
   data.forEach(item => {
-    const attrs = item.attributes || {};
+    const attrs   = item.attributes || {};
     const queries = attrs.queries || [];
-    const from = attrs.from;
-    const to   = attrs.to;
+    const from    = attrs.from;
+    const to      = attrs.to;
     const widgetId = reqJSON.meta?.dd_extra_usage_params?.widget_id || null;
 
     queries.forEach(q => {
@@ -490,17 +511,16 @@ function extractTimeseriesData(respJSON) {
 
     series.forEach((s, i) => {
       out.push({
-        tags:      s.group_tags || [],
-        unit:      s.unit,
-        values:    values[i] || [],
+        tags:     s.group_tags || [],
+        unit:     s.unit,
+        values:   values[i] || [],
         times,
-        interval:  meta.interval || null,
-        from:      meta.from_date,
-        to:        meta.to_date,
+        interval: meta.interval || null,
+        from:     meta.from_date,
+        to:       meta.to_date,
       });
     });
 
-    // If no series but times/values present at top level
     if (series.length === 0 && times.length > 0) {
       out.push({ tags: [], unit: null, values: values[0] || [], times, interval: meta.interval, from: meta.from_date, to: meta.to_date });
     }
@@ -545,15 +565,14 @@ function drawSparkline(canvas, values) {
     return;
   }
 
-  const min  = Math.min(...nums);
-  const max  = Math.max(...nums);
+  const min   = Math.min(...nums);
+  const max   = Math.max(...nums);
   const range = max - min || 1;
-  const pad  = 4;
+  const pad   = 4;
 
   const getY = v => h - pad - ((v - min) / range) * (h - pad * 2);
   const getX = i => pad + (i / (nums.length - 1)) * (w - pad * 2);
 
-  // Fill
   const gradient = ctx.createLinearGradient(0, 0, 0, h);
   gradient.addColorStop(0, 'rgba(107,47,160,0.18)');
   gradient.addColorStop(1, 'rgba(107,47,160,0)');
@@ -566,7 +585,6 @@ function drawSparkline(canvas, values) {
   ctx.fillStyle = gradient;
   ctx.fill();
 
-  // Line
   ctx.beginPath();
   ctx.moveTo(getX(0), getY(nums[0]));
   nums.forEach((v, i) => { if (i > 0) ctx.lineTo(getX(i), getY(v)); });
@@ -576,15 +594,19 @@ function drawSparkline(canvas, values) {
   ctx.stroke();
 }
 
-// Render a single query card
+// ── Render metric info rows helper ─────────────────────────────────────────
+
+function renderMetricInfoRow(label, value) {
+  const row = document.createElement('div');
+  row.className = 'qi-metric-row';
+  row.innerHTML = `<span class="qi-metric-key">${escHtml(label)}</span><span class="qi-metric-val">${escHtml(String(value ?? '–'))}</span>`;
+  return row;
+}
+
+// ── Render a single query/metric card ──────────────────────────────────────
+
 function renderQueryCard(entry) {
   const { url, type, label, status, reqJSON, respJSON, rawReq, rawResp } = entry;
-
-  const queries    = extractQueriesFromRequest(reqJSON, type);
-  const firstQuery = queries[0] || {};
-  const widgetId   = firstQuery.widgetId || reqJSON?.meta?.dd_extra_usage_params?.widget_id || null;
-  const from       = firstQuery.from;
-  const to         = firstQuery.to;
 
   const card = document.createElement('div');
   card.className = 'qi-card';
@@ -598,212 +620,274 @@ function renderQueryCard(entry) {
   epBadge.textContent = label;
   header.appendChild(epBadge);
 
-  if (firstQuery.dataSource) {
-    const ds = document.createElement('span');
-    ds.className = 'qi-data-source';
-    ds.textContent = firstQuery.dataSource;
-    header.appendChild(ds);
-  }
+  // ── Metric endpoints (volume, tags, ai description) ──
+  if (type === 'metric_volume' || type === 'metric_tags' || type === 'metric_ai') {
+    const metricName = extractMetricNameFromUrl(url);
 
-  if (widgetId) {
-    const wid = document.createElement('span');
-    wid.className = 'qi-widget-id';
-    wid.textContent = `widget ${widgetId}`;
-    header.appendChild(wid);
-  }
-
-  if (from && to) {
-    const tr = document.createElement('span');
-    tr.className = 'qi-time-range';
-    const fromD = new Date(from).toLocaleString();
-    const toD   = new Date(to).toLocaleString();
-    tr.textContent = `${fromD} → ${toD}`;
-    header.appendChild(tr);
-  }
-
-  card.appendChild(header);
-
-  // ── Queries ──
-  queries.forEach(q => {
-    if (!q.query) return;
-    const block = document.createElement('div');
-    block.className = 'qi-query-block';
-    const label = document.createElement('div');
-    label.className = 'qi-query-label';
-    label.textContent = `Query · ${q.name}`;
-    const str = document.createElement('div');
-    str.className = 'qi-query-str';
-    const span = document.createElement('span');
-    span.textContent = q.query;
-    str.appendChild(span);
-    const copyBtn = makeCopyBtn(q.query);
-    str.appendChild(copyBtn);
-    block.appendChild(label);
-    block.appendChild(str);
-    card.appendChild(block);
-  });
-
-  // ── Response data ──
-  if (type === 'timeseries') {
-    const seriesData = extractTimeseriesData(respJSON);
-
-    if (!seriesData || seriesData.length === 0) {
-      const noData = document.createElement('div');
-      noData.className = 'qi-no-data';
-      noData.innerHTML = '<i class="bi bi-exclamation-circle"></i> No data returned for this time range.';
-      card.appendChild(noData);
-    } else {
-      const block = document.createElement('div');
-      block.className = 'qi-timeseries-block';
-      const blockLabel = document.createElement('div');
-      blockLabel.className = 'qi-query-label';
-      blockLabel.textContent = `${seriesData.length} series · ${seriesData[0]?.times?.length || 0} data points`;
-      block.appendChild(blockLabel);
-
-      seriesData.forEach(s => {
-        const item = document.createElement('div');
-        item.className = 'qi-series-item';
-
-        // Tags / label row
-        const meta = document.createElement('div');
-        meta.className = 'qi-series-meta';
-        const tagsEl = document.createElement('span');
-        tagsEl.className = s.tags.length ? 'qi-series-tags' : 'qi-series-tags no-tags';
-        tagsEl.textContent = s.tags.length ? s.tags.join(', ') : 'No group tags (aggregate)';
-        meta.appendChild(tagsEl);
-        if (s.interval) {
-          const intEl = document.createElement('span');
-          intEl.className = 'qi-series-interval';
-          intEl.textContent = `interval: ${formatInterval(s.interval)}`;
-          meta.appendChild(intEl);
-        }
-        item.appendChild(meta);
-
-        // Sparkline
-        const canvas = document.createElement('canvas');
-        canvas.className = 'qi-sparkline';
-        item.appendChild(canvas);
-        requestAnimationFrame(() => drawSparkline(canvas, s.values));
-
-        // Value summary
-        const nonNull = s.values.filter(v => v != null && !isNaN(v));
-        if (nonNull.length > 0) {
-          const sum  = nonNull.reduce((a, b) => a + b, 0);
-          const avg  = sum / nonNull.length;
-          const min  = Math.min(...nonNull);
-          const max  = Math.max(...nonNull);
-          const last = nonNull[nonNull.length - 1];
-          const valSummary = document.createElement('div');
-          valSummary.className = 'qi-value-summary';
-          valSummary.innerHTML = `
-            <span>Min: <strong>${min.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
-            <span>Max: <strong>${max.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
-            <span>Avg: <strong>${avg.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
-            <span>Last: <strong>${last.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
-            ${s.unit ? `<span>Unit: <strong>${escHtml(String(s.unit))}</strong></span>` : ''}
-          `;
-          item.appendChild(valSummary);
-        }
-
-        block.appendChild(item);
-      });
-      card.appendChild(block);
+    if (metricName) {
+      const nameEl = document.createElement('span');
+      nameEl.className = 'qi-metric-name';
+      nameEl.textContent = metricName;
+      header.appendChild(nameEl);
     }
 
-  } else if (type === 'scalar') {
-    const cols = extractScalarData(respJSON);
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `qi-status-badge ${isError(status) ? 'err' : 'ok'}`;
+    statusBadge.textContent = status === 0 ? 'BLOCKED' : status;
+    header.appendChild(statusBadge);
 
-    if (!cols || cols.length === 0) {
+    card.appendChild(header);
+
+    if (!respJSON) {
       const noData = document.createElement('div');
       noData.className = 'qi-no-data';
-      noData.innerHTML = '<i class="bi bi-exclamation-circle"></i> No scalar data returned.';
+      noData.innerHTML = '<i class="bi bi-exclamation-circle"></i> No response body available.';
       card.appendChild(noData);
-    } else {
+    } else if (type === 'metric_volume') {
+      // /api/v2/metrics/{name}/volumes → distinct_volume
       const block = document.createElement('div');
-      block.className = 'qi-scalar-block';
-
-      const groupCols  = cols.filter(c => c.type === 'group');
-      const numCols    = cols.filter(c => c.type === 'number');
-
-      // Determine row count
-      const rowCount = numCols.length > 0
-        ? (numCols[0].values || []).length
-        : (groupCols.length > 0 ? (groupCols[0].values || []).length : 0);
-
-      if (rowCount === 0) {
-        block.innerHTML = '<div class="qi-no-data"><i class="bi bi-exclamation-circle"></i> No rows returned.</div>';
+      block.className = 'qi-metric-block';
+      const vol = respJSON.data?.attributes?.distinct_volume;
+      const metricId = respJSON.data?.id;
+      if (metricId) block.appendChild(renderMetricInfoRow('Metric', metricId));
+      if (vol != null) {
+        const volRow = document.createElement('div');
+        volRow.className = 'qi-metric-row';
+        volRow.innerHTML = `<span class="qi-metric-key">Distinct tag volume</span><span class="qi-metric-val qi-metric-vol">${vol.toLocaleString()}</span>`;
+        block.appendChild(volRow);
       } else {
-        // Find max value per numeric col for bar
-        const maxVals = numCols.map(nc => Math.max(...(nc.values || []).map(v => Array.isArray(v) ? v[0] : v).filter(v => v != null && !isNaN(v))));
+        block.appendChild(renderMetricInfoRow('Distinct tag volume', 'Not available'));
+      }
+      card.appendChild(block);
 
-        const table = document.createElement('table');
-        table.className = 'qi-scalar-table';
+    } else if (type === 'metric_tags') {
+      // /api/ui/metrics/all-tags/{name} → metadata object
+      const block = document.createElement('div');
+      block.className = 'qi-metric-block';
 
-        // Header
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        groupCols.forEach(c => {
-          const th = document.createElement('th');
-          th.textContent = c.name;
-          headerRow.appendChild(th);
-        });
-        numCols.forEach(c => {
-          const th = document.createElement('th');
-          th.className = 'numeric';
-          th.textContent = c.name;
-          headerRow.appendChild(th);
-          // bar column
-          const thBar = document.createElement('th');
-          headerRow.appendChild(thBar);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
+      // The response is keyed by metric name
+      const metricData = metricName && respJSON[metricName] ? respJSON[metricName] : respJSON;
 
-        // Body
-        const tbody = document.createElement('tbody');
-        for (let i = 0; i < rowCount; i++) {
-          const tr = document.createElement('tr');
-          groupCols.forEach(c => {
-            const td = document.createElement('td');
-            td.className = 'group-val';
-            const raw = (c.values || [])[i];
-            td.textContent = Array.isArray(raw) ? raw.join(', ') : (raw ?? '–');
-            tr.appendChild(td);
-          });
-          numCols.forEach((c, ci) => {
-            const rawVal = (c.values || [])[i];
-            const val    = Array.isArray(rawVal) ? rawVal[0] : rawVal;
-            const td = document.createElement('td');
-            td.className = 'numeric-val';
-            td.textContent = val != null ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '–';
-            tr.appendChild(td);
-            // Bar cell
-            const tdBar = document.createElement('td');
-            tdBar.className = 'qi-bar-cell';
-            const pct = maxVals[ci] > 0 && val != null ? Math.max(0, Math.min(100, (val / maxVals[ci]) * 100)) : 0;
-            tdBar.innerHTML = `<div class="qi-bar-wrap"><div class="qi-bar-fill" style="width:${pct}%"></div></div>`;
-            tr.appendChild(tdBar);
-          });
-          tbody.appendChild(tr);
-        }
-        table.appendChild(tbody);
-        block.appendChild(table);
+      const fields = [
+        ['Metric type',      metricData.metric_type],
+        ['Description',      metricData.description],
+        ['Short name',       metricData.short_name],
+        ['Unit',             metricData.unit_id || (Array.isArray(metricData.unit) ? metricData.unit.filter(Boolean).join('/') : null)],
+        ['Integration',      metricData.integration_id],
+        ['Origin product',   metricData.origins?.origin_product],
+        ['Origin sub-product', metricData.origins?.origin_sub_product],
+        ['Source',           metricData.source],
+        ['Late enabled',     metricData.late_enabled != null ? String(metricData.late_enabled) : null],
+      ];
+
+      fields.forEach(([k, v]) => {
+        if (v != null && v !== '' && v !== 'null') block.appendChild(renderMetricInfoRow(k, v));
+      });
+
+      if (block.childNodes.length === 0) {
+        block.innerHTML = '<p class="empty-note">No metadata fields found in response.</p>';
+      }
+      card.appendChild(block);
+
+    } else if (type === 'metric_ai') {
+      // /api/ui/metrics/ai-generated-metadata/{name} → description text
+      const block = document.createElement('div');
+      block.className = 'qi-metric-block';
+      if (respJSON.description) {
+        block.appendChild(renderMetricInfoRow('AI description', respJSON.description));
+      } else {
+        block.innerHTML = '<p class="empty-note">No AI-generated description in response.</p>';
       }
       card.appendChild(block);
     }
+
+  } else {
+    // ── Query endpoints (timeseries / scalar) ──
+    const queries    = extractQueriesFromRequest(reqJSON, type);
+    const firstQuery = queries[0] || {};
+    const widgetId   = firstQuery.widgetId || reqJSON?.meta?.dd_extra_usage_params?.widget_id || null;
+    const from       = firstQuery.from;
+    const to         = firstQuery.to;
+
+    if (firstQuery.dataSource) {
+      const ds = document.createElement('span');
+      ds.className = 'qi-data-source';
+      ds.textContent = firstQuery.dataSource;
+      header.appendChild(ds);
+    }
+
+    if (widgetId) {
+      const wid = document.createElement('span');
+      wid.className = 'qi-widget-id';
+      wid.textContent = `widget ${widgetId}`;
+      header.appendChild(wid);
+    }
+
+    if (from && to) {
+      const tr = document.createElement('span');
+      tr.className = 'qi-time-range';
+      tr.textContent = `${new Date(from).toLocaleString()} → ${new Date(to).toLocaleString()}`;
+      header.appendChild(tr);
+    }
+
+    card.appendChild(header);
+
+    // Query strings
+    queries.forEach(q => {
+      if (!q.query) return;
+      const block = document.createElement('div');
+      block.className = 'qi-query-block';
+      const lbl = document.createElement('div');
+      lbl.className = 'qi-query-label';
+      lbl.textContent = `Query · ${q.name}`;
+      const str = document.createElement('div');
+      str.className = 'qi-query-str';
+      const span = document.createElement('span');
+      span.textContent = q.query;
+      str.appendChild(span);
+      str.appendChild(makeCopyBtn(q.query));
+      block.appendChild(lbl);
+      block.appendChild(str);
+      card.appendChild(block);
+    });
+
+    // Response data
+    if (type === 'timeseries') {
+      const seriesData = extractTimeseriesData(respJSON);
+
+      if (!seriesData || seriesData.length === 0) {
+        const noData = document.createElement('div');
+        noData.className = 'qi-no-data';
+        noData.innerHTML = '<i class="bi bi-exclamation-circle"></i> No data returned for this time range.';
+        card.appendChild(noData);
+      } else {
+        const block = document.createElement('div');
+        block.className = 'qi-timeseries-block';
+        const blockLabel = document.createElement('div');
+        blockLabel.className = 'qi-query-label';
+        blockLabel.textContent = `${seriesData.length} series · ${seriesData[0]?.times?.length || 0} data points`;
+        block.appendChild(blockLabel);
+
+        seriesData.forEach(s => {
+          const item = document.createElement('div');
+          item.className = 'qi-series-item';
+
+          const meta = document.createElement('div');
+          meta.className = 'qi-series-meta';
+          const tagsEl = document.createElement('span');
+          tagsEl.className = s.tags.length ? 'qi-series-tags' : 'qi-series-tags no-tags';
+          tagsEl.textContent = s.tags.length ? s.tags.join(', ') : 'No group tags (aggregate)';
+          meta.appendChild(tagsEl);
+          if (s.interval) {
+            const intEl = document.createElement('span');
+            intEl.className = 'qi-series-interval';
+            intEl.textContent = `interval: ${formatInterval(s.interval)}`;
+            meta.appendChild(intEl);
+          }
+          item.appendChild(meta);
+
+          const canvas = document.createElement('canvas');
+          canvas.className = 'qi-sparkline';
+          item.appendChild(canvas);
+          requestAnimationFrame(() => drawSparkline(canvas, s.values));
+
+          const nonNull = s.values.filter(v => v != null && !isNaN(v));
+          if (nonNull.length > 0) {
+            const sum  = nonNull.reduce((a, b) => a + b, 0);
+            const avg  = sum / nonNull.length;
+            const min  = Math.min(...nonNull);
+            const max  = Math.max(...nonNull);
+            const last = nonNull[nonNull.length - 1];
+            const valSummary = document.createElement('div');
+            valSummary.className = 'qi-value-summary';
+            valSummary.innerHTML = `
+              <span>Min: <strong>${min.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
+              <span>Max: <strong>${max.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
+              <span>Avg: <strong>${avg.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
+              <span>Last: <strong>${last.toLocaleString(undefined, {maximumFractionDigits: 2})}</strong></span>
+              ${s.unit ? `<span>Unit: <strong>${escHtml(String(s.unit))}</strong></span>` : ''}
+            `;
+            item.appendChild(valSummary);
+          }
+          block.appendChild(item);
+        });
+        card.appendChild(block);
+      }
+
+    } else if (type === 'scalar') {
+      const cols = extractScalarData(respJSON);
+
+      if (!cols || cols.length === 0) {
+        const noData = document.createElement('div');
+        noData.className = 'qi-no-data';
+        noData.innerHTML = '<i class="bi bi-exclamation-circle"></i> No scalar data returned.';
+        card.appendChild(noData);
+      } else {
+        const block = document.createElement('div');
+        block.className = 'qi-scalar-block';
+
+        const groupCols = cols.filter(c => c.type === 'group');
+        const numCols   = cols.filter(c => c.type === 'number');
+        const rowCount  = numCols.length > 0
+          ? (numCols[0].values || []).length
+          : (groupCols.length > 0 ? (groupCols[0].values || []).length : 0);
+
+        if (rowCount === 0) {
+          block.innerHTML = '<div class="qi-no-data"><i class="bi bi-exclamation-circle"></i> No rows returned.</div>';
+        } else {
+          const maxVals = numCols.map(nc => Math.max(...(nc.values || []).map(v => Array.isArray(v) ? v[0] : v).filter(v => v != null && !isNaN(v))));
+
+          const table = document.createElement('table');
+          table.className = 'qi-scalar-table';
+
+          const thead = document.createElement('thead');
+          const headerRow = document.createElement('tr');
+          groupCols.forEach(c => { const th = document.createElement('th'); th.textContent = c.name; headerRow.appendChild(th); });
+          numCols.forEach(c => {
+            const th = document.createElement('th'); th.className = 'numeric'; th.textContent = c.name; headerRow.appendChild(th);
+            headerRow.appendChild(document.createElement('th'));
+          });
+          thead.appendChild(headerRow);
+          table.appendChild(thead);
+
+          const tbody = document.createElement('tbody');
+          for (let i = 0; i < rowCount; i++) {
+            const tr = document.createElement('tr');
+            groupCols.forEach(c => {
+              const td = document.createElement('td'); td.className = 'group-val';
+              const raw = (c.values || [])[i];
+              td.textContent = Array.isArray(raw) ? raw.join(', ') : (raw ?? '–');
+              tr.appendChild(td);
+            });
+            numCols.forEach((c, ci) => {
+              const rawVal = (c.values || [])[i];
+              const val    = Array.isArray(rawVal) ? rawVal[0] : rawVal;
+              const td = document.createElement('td'); td.className = 'numeric-val';
+              td.textContent = val != null ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '–';
+              tr.appendChild(td);
+              const tdBar = document.createElement('td'); tdBar.className = 'qi-bar-cell';
+              const pct = maxVals[ci] > 0 && val != null ? Math.max(0, Math.min(100, (val / maxVals[ci]) * 100)) : 0;
+              tdBar.innerHTML = `<div class="qi-bar-wrap"><div class="qi-bar-fill" style="width:${pct}%"></div></div>`;
+              tr.appendChild(tdBar);
+            });
+            tbody.appendChild(tr);
+          }
+          table.appendChild(tbody);
+          block.appendChild(table);
+        }
+        card.appendChild(block);
+      }
+    }
   }
 
-  // ── Raw JSON toggle ──
-  const rawBlock = document.createElement('div');
+  // ── Raw JSON toggle (all card types) ──
+  const rawBlock  = document.createElement('div');
   rawBlock.className = 'qi-raw-block';
-
   const rawToggle = document.createElement('button');
   rawToggle.className = 'qi-raw-toggle';
   rawToggle.innerHTML = '<i class="bi bi-code-slash"></i> View raw JSON <i class="bi bi-chevron-down qi-raw-chevron"></i>';
-
   const rawPre = document.createElement('pre');
   rawPre.className = 'qi-raw-pre';
-
   let rawLoaded = false;
   rawToggle.addEventListener('click', () => {
     const open = rawPre.classList.toggle('open');
@@ -816,7 +900,6 @@ function renderQueryCard(entry) {
       rawPre.textContent = combined || '(empty)';
     }
   });
-
   rawBlock.appendChild(rawToggle);
   rawBlock.appendChild(rawPre);
   card.appendChild(rawBlock);
@@ -824,7 +907,6 @@ function renderQueryCard(entry) {
   return card;
 }
 
-// Process a HAR file for the Query Inspector tab
 // ── HAR sanitizer ─────────────────────────────────────────────────────────
 // Some HARs (especially from Chrome) contain:
 // 1. Invalid \uXXXX escapes in binary response/request bodies
@@ -843,14 +925,13 @@ function sanitizeHAR(raw) {
     const isLast = i === lines.length - 1;
 
     if (stripped.startsWith('"text"') && line.includes(REPLACEMENT_CHAR)) {
-      const indent = line.length - stripped.length;
+      const indent   = line.length - stripped.length;
       const trailing = stripped.trimEnd().endsWith(',') ? ',' : '';
 
       if (isLast) {
-        // Truncated file — close the open JSON structures
         cleaned.push(' '.repeat(indent) + '"text": "[binary content removed]"');
-        cleaned.push(' '.repeat(indent - 2) + '}');    // close postData
-        cleaned.push(' '.repeat(indent - 4) + '},');   // close request
+        cleaned.push(' '.repeat(indent - 2) + '}');
+        cleaned.push(' '.repeat(indent - 4) + '},');
         cleaned.push(' '.repeat(indent - 4) + '"response": {');
         cleaned.push(' '.repeat(indent) + '"status": 0,');
         cleaned.push(' '.repeat(indent) + '"statusText": "",');
@@ -861,14 +942,14 @@ function sanitizeHAR(raw) {
         cleaned.push(' '.repeat(indent) + '"redirectURL": "",');
         cleaned.push(' '.repeat(indent) + '"headersSize": -1,');
         cleaned.push(' '.repeat(indent) + '"bodySize": -1');
-        cleaned.push(' '.repeat(indent - 4) + '},');   // close response
+        cleaned.push(' '.repeat(indent - 4) + '},');
         cleaned.push(' '.repeat(indent - 4) + '"cache": {},');
         cleaned.push(' '.repeat(indent - 4) + '"timings": {"send": 0, "wait": 0, "receive": 0},');
         cleaned.push(' '.repeat(indent - 4) + '"time": 0');
-        cleaned.push(' '.repeat(indent - 6) + '}');    // close entry
-        cleaned.push(' '.repeat(indent - 8) + ']');    // close entries
-        cleaned.push(' '.repeat(indent - 10) + '}');   // close log
-        cleaned.push('}');                              // close root
+        cleaned.push(' '.repeat(indent - 6) + '}');
+        cleaned.push(' '.repeat(indent - 8) + ']');
+        cleaned.push(' '.repeat(indent - 10) + '}');
+        cleaned.push('}');
       } else {
         cleaned.push(' '.repeat(indent) + '"text": "[binary content removed]"' + trailing);
       }
@@ -879,10 +960,11 @@ function sanitizeHAR(raw) {
   }
 
   let result = cleaned.join('\n');
-  // Fix invalid \uXXXX escapes (not followed by exactly 4 hex digits)
   result = result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
   return result;
 }
+
+// ── Process Query Inspector file ───────────────────────────────────────────
 
 function processQueryFile(file) {
   const container = document.getElementById('query-results');
@@ -910,23 +992,19 @@ function processQueryFile(file) {
 
     const entries = parseQueryEntries(data);
 
-    // File group wrapper
     const group = document.createElement('div');
-
     const heading = document.createElement('div');
     heading.className = 'qi-file-heading';
-    heading.innerHTML = `<i class="bi bi-file-earmark-text"></i> ${escHtml(file.name)} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.78rem;color:var(--muted)">(${entries.length} query request${entries.length !== 1 ? 's' : ''} found)</span>`;
+    heading.innerHTML = `<i class="bi bi-file-earmark-text"></i> ${escHtml(file.name)} <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.78rem;color:var(--muted)">(${entries.length} request${entries.length !== 1 ? 's' : ''} found)</span>`;
     group.appendChild(heading);
 
     if (entries.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'qi-empty';
-      empty.innerHTML = '<i class="bi bi-search"></i> No timeseries or scalar query requests found in this HAR.<br>Make sure the HAR was captured from <code>app.datadoghq.com</code> with a dashboard open.';
+      empty.innerHTML = '<i class="bi bi-search"></i> No query or metric requests found in this HAR.<br>Make sure the HAR was captured from <code>app.datadoghq.com</code> with a dashboard open.';
       group.appendChild(empty);
     } else {
-      entries.forEach(entry => {
-        group.appendChild(renderQueryCard(entry));
-      });
+      entries.forEach(entry => group.appendChild(renderQueryCard(entry)));
     }
 
     container.prepend(group);
@@ -986,7 +1064,6 @@ function renderFileCard(analysis) {
   const card = document.createElement('div');
   card.className = 'file-card';
 
-  // ── Header ──
   const header = document.createElement('div');
   header.className = 'file-card-header';
   header.innerHTML = `
@@ -1003,7 +1080,6 @@ function renderFileCard(analysis) {
   `;
   card.appendChild(header);
 
-  // ── Summary strip ──
   const strip = document.createElement('div');
   strip.className = 'summary-strip';
   const rumSdk = sdkLoads.find(s => s.type === 'rum' || s.type === 'rum-slim');
@@ -1017,7 +1093,6 @@ function renderFileCard(analysis) {
   `;
   card.appendChild(strip);
 
-  // ── Warnings ──
   if (warnings.length > 0) {
     const warnBlock = document.createElement('div');
     warnBlock.className = 'section-block';
@@ -1038,7 +1113,6 @@ function renderFileCard(analysis) {
     card.appendChild(warnBlock);
   }
 
-  // ── SDK Health ──
   const sdkBlock = document.createElement('div');
   sdkBlock.className = 'section-block';
   sdkBlock.innerHTML = `<div class="block-heading"><i class="bi bi-cpu"></i> SDK health</div><p class="section-caveat"><i class="bi bi-info-circle"></i> SDK script requests are only present if the browser loaded them during the capture window. <strong>Best effort only.</strong></p>`;
@@ -1070,7 +1144,6 @@ function renderFileCard(analysis) {
   }
   card.appendChild(sdkBlock);
 
-  // ── Init Config ──
   if (initConfig) {
     const cfgBlock = document.createElement('div');
     cfgBlock.className = 'section-block';
@@ -1105,7 +1178,6 @@ function renderFileCard(analysis) {
     card.appendChild(cfgBlock);
   }
 
-  // ── RUM Identifiers ──
   const rumBlock = document.createElement('div');
   rumBlock.className = 'section-block';
   rumBlock.innerHTML = `<div class="block-heading"><i class="bi bi-eye"></i> RUM identifiers</div>`;
@@ -1137,7 +1209,6 @@ function renderFileCard(analysis) {
   rumBlock.appendChild(rumGrid);
   card.appendChild(rumBlock);
 
-  // ── Event type breakdown ──
   if (Object.keys(eventTypeCounts).length > 0) {
     const evtBlock = document.createElement('div');
     evtBlock.className = 'section-block';
@@ -1151,7 +1222,6 @@ function renderFileCard(analysis) {
     card.appendChild(evtBlock);
   }
 
-  // ── RUM <> APM Correlation ──
   const apmBlock = document.createElement('div');
   apmBlock.className = 'section-block';
   apmBlock.innerHTML = `<div class="block-heading"><i class="bi bi-diagram-3"></i> RUM &harr; APM correlation</div>`;
@@ -1172,10 +1242,8 @@ function renderFileCard(analysis) {
       <div class="apm-stat"><span class="apm-stat-val">${w3cCount}</span><span class="apm-stat-label">W3C traceparent</span></div>
     `;
     apmBlock.appendChild(apmSummary);
-    const wrap = document.createElement('div');
-    wrap.className = 'table-wrap';
-    const table = document.createElement('table');
-    table.className = 'data-table';
+    const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+    const table = document.createElement('table'); table.className = 'data-table';
     table.innerHTML = `<thead><tr><th>URL</th><th>Method</th><th>Status</th><th>Trace ID</th><th>Origin</th><th>Sampled</th><th>W3C traceparent</th></tr></thead>`;
     const tbody = document.createElement('tbody');
     apmCorrelations.forEach(c => {
@@ -1192,23 +1260,18 @@ function renderFileCard(analysis) {
       `;
       tbody.appendChild(tr);
     });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    apmBlock.appendChild(wrap);
+    table.appendChild(tbody); wrap.appendChild(table); apmBlock.appendChild(wrap);
   }
   card.appendChild(apmBlock);
 
-  // ── DD Cookies ──
   const cookiesBlock = document.createElement('div');
   cookiesBlock.className = 'section-block';
   cookiesBlock.innerHTML = `<div class="block-heading"><i class="bi bi-shield-lock"></i> Datadog cookies</div><p class="section-caveat"><i class="bi bi-info-circle"></i> HAR files may not include cookie headers depending on browser and capture settings. <strong>Best effort only.</strong></p>`;
   if (ddCookies.length === 0) {
     cookiesBlock.innerHTML += `<p class="empty-note">No Datadog cookies found. Check DevTools › Application › Cookies directly if needed.</p>`;
   } else {
-    const wrap = document.createElement('div');
-    wrap.className = 'table-wrap';
-    const table = document.createElement('table');
-    table.className = 'data-table';
+    const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+    const table = document.createElement('table'); table.className = 'data-table';
     table.innerHTML = `<thead><tr><th>Cookie</th><th>Raw value</th><th>Decoded segments</th><th>URL</th><th></th></tr></thead>`;
     const tbody = document.createElement('tbody');
     ddCookies.forEach(c => {
@@ -1224,25 +1287,18 @@ function renderFileCard(analysis) {
       tr.querySelector('.copy-cell').appendChild(makeCopyBtn(c.value));
       tbody.appendChild(tr);
     });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    cookiesBlock.appendChild(wrap);
+    table.appendChild(tbody); wrap.appendChild(table); cookiesBlock.appendChild(wrap);
   }
   card.appendChild(cookiesBlock);
 
-  // ── Intake Errors ──
   if (intakeErrors.length > 0) {
     const errBlock = document.createElement('div');
     errBlock.className = 'section-block';
     errBlock.innerHTML = `<div class="block-heading"><i class="bi bi-exclamation-triangle"></i> Intake errors</div>`;
-    const list = document.createElement('div');
-    list.className = 'error-list';
+    const list = document.createElement('div'); list.className = 'error-list';
     intakeErrors.forEach(err => {
-      const item   = document.createElement('div');
-      item.className = 'error-item';
-      const toggle = document.createElement('button');
-      toggle.className = 'error-toggle';
-      toggle.setAttribute('aria-expanded', 'false');
+      const item   = document.createElement('div'); item.className = 'error-item';
+      const toggle = document.createElement('button'); toggle.className = 'error-toggle'; toggle.setAttribute('aria-expanded', 'false');
       const statusLabel = err.status === 0 ? 'BLOCKED' : err.status;
       toggle.innerHTML = `
         <span class="err-status">${escHtml(String(statusLabel))}</span>
@@ -1250,8 +1306,7 @@ function renderFileCard(analysis) {
         <span class="err-url" title="${escHtml(err.url)}">${escHtml(err.url)}</span>
         <i class="bi bi-chevron-down err-chevron"></i>
       `;
-      const detail = document.createElement('div');
-      detail.className = 'error-detail';
+      const detail = document.createElement('div'); detail.className = 'error-detail';
       const sections = [];
       if (err.reqHeaders.length) sections.push(`<div class="detail-section"><div class="detail-label">Request headers</div>${err.reqHeaders.map(h => `<div class="header-row"><span class="hname">${escHtml(h.name)}</span><span class="hval">${escHtml(h.value)}</span></div>`).join('')}</div>`);
       if (err.resHeaders.length) sections.push(`<div class="detail-section"><div class="detail-label">Response headers</div>${err.resHeaders.map(h => `<div class="header-row"><span class="hname">${escHtml(h.name)}</span><span class="hval">${escHtml(h.value)}</span></div>`).join('')}</div>`);
@@ -1263,24 +1318,18 @@ function renderFileCard(analysis) {
         toggle.setAttribute('aria-expanded', String(open));
         toggle.querySelector('.err-chevron').classList.toggle('open', open);
       });
-      item.appendChild(toggle);
-      item.appendChild(detail);
-      list.appendChild(item);
+      item.appendChild(toggle); item.appendChild(detail); list.appendChild(item);
     });
-    errBlock.appendChild(list);
-    card.appendChild(errBlock);
+    errBlock.appendChild(list); card.appendChild(errBlock);
   }
 
-  // ── Session Replay ──
   if (replayRequests.length > 0) {
     const replayBlock = document.createElement('div');
     replayBlock.className = 'section-block';
     replayBlock.innerHTML = `<div class="block-heading"><i class="bi bi-camera-video"></i> Session replay requests</div>`;
-    const list = document.createElement('div');
-    list.className = 'replay-list';
+    const list = document.createElement('div'); list.className = 'replay-list';
     replayRequests.forEach(r => {
-      const item = document.createElement('div');
-      item.className = 'replay-item';
+      const item = document.createElement('div'); item.className = 'replay-item';
       item.innerHTML = `
         <span class="replay-status ${isError(r.status) ? 'err' : 'ok'}">${escHtml(String(r.status === 0 ? 'BLOCKED' : r.status))}</span>
         <span class="replay-url" title="${escHtml(r.url)}">${escHtml(r.url)}</span>
@@ -1288,11 +1337,9 @@ function renderFileCard(analysis) {
       `;
       list.appendChild(item);
     });
-    replayBlock.appendChild(list);
-    card.appendChild(replayBlock);
+    replayBlock.appendChild(list); card.appendChild(replayBlock);
   }
 
-  // ── Additional details ──
   const infoBlock = document.createElement('div');
   infoBlock.className = 'section-block';
   infoBlock.innerHTML = `<div class="block-heading"><i class="bi bi-info-circle"></i> Additional details</div>`;
@@ -1302,35 +1349,26 @@ function renderFileCard(analysis) {
     { key: 'SDK init calls',         val: String(sdkInitCount) + (sdkInitCount > 1 ? ' ⚠ duplicate init detected' : '') },
     ...Object.entries(endpointHits).map(([host, count]) => ({ key: `Endpoint: ${host}`, val: `${count} request${count > 1 ? 's' : ''}` })),
   ];
-  const detailRows = document.createElement('div');
-  detailRows.className = 'detail-rows';
+  const detailRows = document.createElement('div'); detailRows.className = 'detail-rows';
   rows.forEach(({ key, val }) => {
-    const row = document.createElement('div');
-    row.className = 'detail-row';
+    const row = document.createElement('div'); row.className = 'detail-row';
     row.innerHTML = `<span class="detail-row-key">${escHtml(key)}</span><span class="detail-row-val">${escHtml(val)}</span>`;
     detailRows.appendChild(row);
   });
-  infoBlock.appendChild(detailRows);
-  card.appendChild(infoBlock);
+  infoBlock.appendChild(detailRows); card.appendChild(infoBlock);
 
-  // ── Export bar ──
-  const exportBar = document.createElement('div');
-  exportBar.className = 'export-bar';
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'har-btn';
+  const exportBar = document.createElement('div'); exportBar.className = 'export-bar';
+  const copyBtn = document.createElement('button'); copyBtn.className = 'har-btn';
   copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy summary';
   copyBtn.addEventListener('click', () => {
     copyToClipboard(buildTextSummary(analysis), copyBtn);
     copyBtn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
     setTimeout(() => { copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copy summary'; }, 2000);
   });
-  const downloadBtn = document.createElement('button');
-  downloadBtn.className = 'har-btn har-btn-primary';
+  const downloadBtn = document.createElement('button'); downloadBtn.className = 'har-btn har-btn-primary';
   downloadBtn.innerHTML = '<i class="bi bi-download"></i> Export JSON';
   downloadBtn.addEventListener('click', () => exportJSON(analysis));
-  exportBar.appendChild(copyBtn);
-  exportBar.appendChild(downloadBtn);
-  card.appendChild(exportBar);
+  exportBar.appendChild(copyBtn); exportBar.appendChild(downloadBtn); card.appendChild(exportBar);
 
   return card;
 }
@@ -1408,14 +1446,13 @@ function processFile(file) {
   reader.readAsText(file);
 }
 
-function handleFiles(files)        { Array.from(files).forEach(processFile); }
-function handleQueryFiles(files)   { Array.from(files).forEach(processQueryFile); }
+function handleFiles(files)      { Array.from(files).forEach(processFile); }
+function handleQueryFiles(files) { Array.from(files).forEach(processQueryFile); }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
 (function init() {
-  // ── Tab switching ──
-  const tabs    = document.querySelectorAll('.har-tab');
+  const tabs     = document.querySelectorAll('.har-tab');
   const tabPanes = {
     rum:     document.getElementById('tab-rum'),
     queries: document.getElementById('tab-queries'),
@@ -1432,7 +1469,6 @@ function handleQueryFiles(files)   { Array.from(files).forEach(processQueryFile)
     });
   });
 
-  // ── RUM Analyzer drop zone ──
   const dropZone  = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
   fileInput.addEventListener('change', e => { handleFiles(e.target.files); e.target.value = ''; });
@@ -1440,7 +1476,6 @@ function handleQueryFiles(files)   { Array.from(files).forEach(processQueryFile)
   dropZone.addEventListener('dragleave', e => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
   dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
 
-  // ── Query Inspector drop zone ──
   const dropZoneQ  = document.getElementById('drop-zone-queries');
   const fileInputQ = document.getElementById('file-input-queries');
   fileInputQ.addEventListener('change', e => { handleQueryFiles(e.target.files); e.target.value = ''; });

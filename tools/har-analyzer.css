@@ -75,7 +75,7 @@
 
 .har-container {
   max-width: 660px;
-  padding: 0 2 rem;
+  padding: 0 2rem;
   margin-left: 0;
   margin-right: auto;
 }
@@ -97,7 +97,7 @@
   transition: background 0.15s ease, border-color 0.15s ease;
   margin-bottom: 2.5rem;
   overflow: hidden;
-  max-width: 620px;
+  /* max-width: 620px; */
   margin-left: 0;
 }
 #drop-zone:hover,

@@ -960,7 +960,7 @@ function sanitizeHAR(raw) {
   }
 
   let result = cleaned.join('\n');
-  result = result.replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+  result = result.replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
   return result;
 }
 

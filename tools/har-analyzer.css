@@ -68,14 +68,14 @@
 
 /* ── Main content ── */
 .har-section {
-  padding: 2.5rem 0 4rem;
+  padding: 1.5rem 0 3rem;
   background: #fff;
   margin-left: 300px;
 }
 
 .har-container {
   padding: 0 2rem;
-  max-width: 880px;
+  max-width: 660px;
 }
 
 @media (max-width: 1199px) {

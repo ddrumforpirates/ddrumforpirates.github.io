@@ -68,19 +68,18 @@
 
 /* ── Main content ── */
 .har-section {
-  padding: 1.5rem 0 3rem;
+  padding: 1.5rem 2rem 3rem;
   background: #fff;
   margin-left: 300px;
 }
 
 .har-container {
-  padding: 0 2rem;
   max-width: 660px;
 }
 
 @media (max-width: 1199px) {
   .har-container { padding: 0 1rem; }
-  .har-section { margin-left: 0; }
+  .har-section { margin-left: 0 padding-left: 1rem; }
 }
 
 /* ── Drop Zone ── */

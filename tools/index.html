@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HAR Analyzer – Havana Club Tools</title>
-  <meta name="description" content="Analyze HAR files for Datadog RUM cookies, session IDs, intake errors, and session replay requests." />
+  <meta name="description" content="Analyze HAR files for Datadog RUM cookies, session IDs, intake errors, session replay requests, and dashboard query inspection." />
   <meta name="author" content="Naveen G." />
   <meta name="theme-color" content="#000000" />
 
@@ -109,18 +109,30 @@
     </div>
   </header>
 
-  <!-- Hero: background image kept, height/layout adjusted via .tools #hero in har-analyzer.css -->
+  <!-- Hero -->
   <section id="hero" class="d-flex align-items-center">
     <div class="hero-container" data-aos="fade-in">
       <div class="har-eyebrow">Datadog HAR Analyzer</div>
       <h1>Inspect your HAR files</h1>
-      <p class="har-hero-sub">Drop one or more <code>.har</code> files to extract Datadog cookies, RUM identifiers, intake errors, session replay signals, and more — entirely in your browser. Nothing is uploaded anywhere.</p>
+      <p class="har-hero-sub">Drop one or more <code>.har</code> files to extract Datadog cookies, RUM identifiers, intake errors, session replay signals, dashboard query data, and more — entirely in your browser. Nothing is uploaded anywhere.</p>
     </div>
   </section>
 
   <!-- Main -->
   <main id="main">
-    <section class="har-section">
+
+    <!-- Tab bar -->
+    <div class="har-tabs" role="tablist">
+      <button class="har-tab active" data-tab="rum" role="tab" aria-selected="true" aria-controls="tab-rum">
+        <i class="bi bi-eye"></i> RUM Analyzer
+      </button>
+      <button class="har-tab" data-tab="queries" role="tab" aria-selected="false" aria-controls="tab-queries">
+        <i class="bi bi-graph-up"></i> Query Inspector
+      </button>
+    </div>
+
+    <!-- Tab: RUM Analyzer -->
+    <section class="har-section" id="tab-rum" role="tabpanel">
       <div class="har-container">
 
         <!-- Drop Zone -->
@@ -138,6 +150,31 @@
 
       </div>
     </section>
+
+    <!-- Tab: Query Inspector -->
+    <section class="har-section" id="tab-queries" role="tabpanel" style="display:none">
+      <div class="har-container">
+
+        <div class="qi-intro">
+          <p>Drop a HAR file captured from <code>app.datadoghq.com</code> to inspect the underlying data behind dashboard widgets. Supports <code>/api/ui/query/timeseries</code> and <code>/api/ui/query/scalar</code> endpoints.</p>
+        </div>
+
+        <!-- Drop Zone (Query Inspector) -->
+        <div id="drop-zone-queries" role="region" aria-label="HAR file upload area for query inspection">
+          <input type="file" id="file-input-queries" accept=".har" multiple aria-label="Select HAR files for query inspection" />
+          <div class="drop-icon">
+            <i class="bi bi-file-earmark-bar-graph"></i>
+          </div>
+          <div class="drop-title">Drop <code>.har</code> from <code>app.datadoghq.com</code> here or <span class="drop-cta">click to browse</span></div>
+          <div class="drop-sub">Multiple files supported &nbsp;·&nbsp; Stays in your browser &nbsp;·&nbsp; .har only</div>
+        </div>
+
+        <!-- Query Results -->
+        <div id="query-results" aria-live="polite"></div>
+
+      </div>
+    </section>
+
   </main>
 
   <!-- Back to Top -->

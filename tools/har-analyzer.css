@@ -79,7 +79,7 @@
 
 @media (max-width: 1199px) {
   .har-container { padding: 0 1rem; }
-  .har-section { margin-left: 0 padding-left: 1rem; }
+  .har-section { margin-left: 0; padding-left: 1rem; }
 }
 
 /* ── Drop Zone ── */
@@ -94,6 +94,7 @@
   transition: background 0.15s ease, border-color 0.15s ease;
   margin-bottom: 2.5rem;
   overflow: hidden;
+  max-width: 620px;
 }
 #drop-zone:hover,
 #drop-zone.drag-over {

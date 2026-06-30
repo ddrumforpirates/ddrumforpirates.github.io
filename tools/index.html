@@ -123,12 +123,14 @@
 
     <!-- Tab bar -->
     <div class="har-tabs" role="tablist">
-      <button class="har-tab active" data-tab="rum" role="tab" aria-selected="true" aria-controls="tab-rum">
-        <i class="bi bi-eye"></i> RUM Analyzer
-      </button>
-      <button class="har-tab" data-tab="queries" role="tab" aria-selected="false" aria-controls="tab-queries">
-        <i class="bi bi-graph-up"></i> Query Inspector
-      </button>
+      <div class="har-tabs-inner">
+        <button class="har-tab active" data-tab="rum" role="tab" aria-selected="true" aria-controls="tab-rum">
+          <i class="bi bi-eye"></i> RUM Analyzer
+        </button>
+        <button class="har-tab" data-tab="queries" role="tab" aria-selected="false" aria-controls="tab-queries">
+          <i class="bi bi-graph-up"></i> Query Inspector
+        </button>
+      </div>
     </div>
 
     <!-- Tab: RUM Analyzer -->
@@ -201,4 +203,3 @@
 
 </body>
 </html>
-

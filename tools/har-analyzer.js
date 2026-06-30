@@ -31,10 +31,34 @@ const SESSION_REPLAY_PATTERNS = [
   /\/api\/v2\/replay/,
 ];
 
+// Intake path signatures used by the browser SDK. These hold true regardless
+// of the host, so they also match a first-party reverse-proxy to the intake
+// (e.g. https://app.example.com/api/v2/rum?ddsource=browser&...).
+const DD_INTAKE_PATH_PATTERNS = [
+  /\/api\/v2\/rum(?:\b|\/|\?|$)/,
+  /\/api\/v2\/logs(?:\b|\/|\?|$)/,
+  /\/api\/v2\/replay(?:\b|\/|\?|$)/,
+  /\/api\/v2\/spans(?:\b|\/|\?|$)/,
+];
+
+// Query-string markers the SDK always appends to an intake request. Presence
+// of these on ANY host is a strong signal that the request is proxied intake.
+const DD_INTAKE_QUERY_KEYS = ['ddsource', 'dd-api-key', 'dd-evp-origin', 'dd-request-id'];
+
 const DD_SDK_PATTERNS = [
   /datadoghq-browser-agent\.com.*datadog-rum/,
   /datadoghq-browser-agent\.com.*datadog-logs/,
   /datadoghq-browser-agent\.com.*datadog-rum-slim/,
+];
+
+// SDK bundles can be self-hosted / proxied from a first-party origin, in which
+// case the official host is absent. The browser SDK still names its files in a
+// recognizable way (e.g. datadogRecorder.<hash>.js, datadog-rum chunks).
+const DD_SDK_FILENAME_PATTERNS = [
+  /datadog-?rum(?:-slim)?(?:[.-][a-z0-9]+)*\.js/i,
+  /datadog-?logs(?:[.-][a-z0-9]+)*\.js/i,
+  /datadog-?recorder(?:[.-][a-z0-9]+)*\.js/i,
+  /datadog-?rum-?recorder(?:[.-][a-z0-9]+)*\.js/i,
 ];
 
 const DD_COOKIE_NAMES = ['_dd_s', '_dd_s_v2', '_dd_r', '_dd_l', '_dd'];
@@ -58,9 +82,57 @@ const QI_ENDPOINTS = [
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
-function isIntakeUrl(url) { return DD_INTAKE_PATTERNS.some(p => p.test(url)); }
-function isReplayUrl(url) { return SESSION_REPLAY_PATTERNS.some(p => p.test(url)); }
-function isSdkUrl(url)    { return DD_SDK_PATTERNS.some(p => p.test(url)); }
+function hasIntakeQuerySignature(url) {
+  try {
+    const sp = new URL(url).searchParams;
+    return DD_INTAKE_QUERY_KEYS.some(k => sp.has(k));
+  } catch {
+    // Fall back to a cheap substring check if URL parsing fails.
+    return DD_INTAKE_QUERY_KEYS.some(k => url.includes(k + '='));
+  }
+}
+
+function isIntakePath(url) {
+  try {
+    return DD_INTAKE_PATH_PATTERNS.some(p => p.test(new URL(url).pathname));
+  } catch {
+    return DD_INTAKE_PATH_PATTERNS.some(p => p.test(url));
+  }
+}
+
+// An intake request is identified by either the official Datadog host OR by a
+// proxied request: an intake path carrying the SDK's query signature. The
+// query signature guard keeps us from matching an app's own /api/v2/rum route
+// that has nothing to do with Datadog.
+function isIntakeUrl(url) {
+  if (DD_INTAKE_PATTERNS.some(p => p.test(url))) return true;
+  return isIntakePath(url) && hasIntakeQuerySignature(url);
+}
+
+// True when the intake request is NOT going to an official Datadog host —
+// i.e. it is being relayed through a first-party reverse proxy.
+function isProxiedIntakeUrl(url) {
+  if (DD_INTAKE_PATTERNS.some(p => p.test(url))) return false;
+  return isIntakePath(url) && hasIntakeQuerySignature(url);
+}
+
+function isReplayUrl(url) {
+  if (SESSION_REPLAY_PATTERNS.some(p => p.test(url))) return true;
+  // Proxied replay: /api/v2/replay on a non-DD host with the SDK signature.
+  try {
+    return /\/api\/v2\/replay(?:\b|\/|\?|$)/.test(new URL(url).pathname) && hasIntakeQuerySignature(url);
+  } catch {
+    return false;
+  }
+}
+
+function isSdkUrl(url) {
+  if (DD_SDK_PATTERNS.some(p => p.test(url))) return true;
+  // Self-hosted / proxied SDK bundle: match by recognizable filename, but only
+  // on .js resources to avoid matching intake or other requests.
+  return /\.js(?:\?|$)/i.test(url) && DD_SDK_FILENAME_PATTERNS.some(p => p.test(url));
+}
+
 function isError(status)  { return status === 0 || status >= 400; }
 
 function formatBytes(bytes) {
@@ -131,10 +203,26 @@ function extractSdkVersion(url) {
   return m ? m[1] : null;
 }
 
+// Parse a RUM/Logs intake request body. The browser SDK sends newline-delimited
+// JSON (one event per line). In a proxied setup this is the richest source of
+// truth — it carries application/session/view ids, service, version, env and
+// the resolved _dd.configuration that the URL params and cookies do not.
+function parseIntakeBody(rawText) {
+  const events = [];
+  if (!rawText) return events;
+  rawText.split('\n').forEach(line => {
+    const s = line.trim();
+    if (!s) return;
+    try { events.push(JSON.parse(s)); } catch { /* skip non-JSON line */ }
+  });
+  return events;
+}
+
 function extractSdkType(url) {
-  if (/datadog-rum-slim/.test(url)) return 'rum-slim';
-  if (/datadog-rum/.test(url))      return 'rum';
-  if (/datadog-logs/.test(url))     return 'logs';
+  if (/datadog-rum-slim/i.test(url))    return 'rum-slim';
+  if (/datadog-?recorder/i.test(url))   return 'recorder';
+  if (/datadog-?rum/i.test(url))        return 'rum';
+  if (/datadog-?logs/i.test(url))       return 'logs';
   return 'unknown';
 }
 
@@ -174,13 +262,41 @@ function extractMetricNameFromUrl(url) {
 function buildWarnings(analysis) {
   const warns = [];
   const { sdkLoads, initConfig, intakeErrors, intakeSuccess,
-          replayRequests, sessionId, ddCookies, endpointHits } = analysis;
+          replayRequests, sessionId, ddCookies, endpointHits, proxyInfo, bodyInsights } = analysis;
+
+  // ── Proxy diagnostics ──────────────────────────────────────────────
+  if (proxyInfo && proxyInfo.isProxied) {
+    const hosts = Object.keys(proxyInfo.hosts || {});
+    warns.push({
+      sev: 'info', cat: 'Proxy',
+      msg: `Intake is proxied through a first-party origin (${proxyInfo.proxiedIntake} request${proxyInfo.proxiedIntake > 1 ? 's' : ''}) rather than *.browser-intake-datadoghq.com.`,
+      detail: hosts.join(', '),
+    });
+    if (proxyInfo.directIntake > 0) {
+      warns.push({
+        sev: 'warn', cat: 'Proxy',
+        msg: `Mixed intake routing: ${proxyInfo.proxiedIntake} proxied and ${proxyInfo.directIntake} direct-to-Datadog request(s) in the same capture. Confirm the proxy ('proxy' init option) is configured consistently.`,
+      });
+    }
+    if (proxyInfo.clientToken && !/^pub/.test(proxyInfo.clientToken)) {
+      warns.push({
+        sev: 'warn', cat: 'Proxy',
+        msg: `The dd-api-key on proxied intake does not look like a browser client token (expected to start with 'pub').`,
+      });
+    }
+  }
 
   const rumSdk  = sdkLoads.find(s => s.type === 'rum' || s.type === 'rum-slim');
   const logsSdk = sdkLoads.find(s => s.type === 'logs');
 
   if (sdkLoads.length === 0) {
-    warns.push({ sev: 'error', cat: 'SDK', msg: 'No Datadog browser SDK load detected in this HAR.' });
+    // With a proxy, the SDK bundle is often self-hosted and may not be in the
+    // capture window; downgrade from a hard error in that case.
+    if (proxyInfo && proxyInfo.isProxied) {
+      warns.push({ sev: 'info', cat: 'SDK', msg: 'No Datadog browser SDK load found in this HAR. With a self-hosted/proxied setup the bundle may have loaded outside the capture window or from cache.' });
+    } else {
+      warns.push({ sev: 'error', cat: 'SDK', msg: 'No Datadog browser SDK load detected in this HAR.' });
+    }
   } else {
     sdkLoads.forEach(sdk => {
       if (isError(sdk.status)) {
@@ -190,7 +306,11 @@ function buildWarnings(analysis) {
         warns.push({ sev: 'warn', cat: 'SDK', msg: `SDK took ${formatMs(sdk.loadTimeMs)} to load — slow load may delay first event capture.`, detail: sdk.url });
       }
       if (!KNOWN_OFFICIAL_SDK_HOSTS.some(h => sdk.url.includes(h))) {
-        warns.push({ sev: 'info', cat: 'SDK', msg: `SDK loaded from non-standard host (self-hosted or proxied): ${sdk.url}` });
+        // Expected when proxied/self-hosted — keep it informational, not noisy.
+        const note = (proxyInfo && proxyInfo.isProxied)
+          ? 'SDK is self-hosted/proxied (consistent with proxied intake).'
+          : 'SDK loaded from non-standard host (self-hosted or proxied).';
+        warns.push({ sev: 'info', cat: 'SDK', msg: `${note}`, detail: sdk.url });
       }
     });
     if (rumSdk && logsSdk && rumSdk.version !== logsSdk.version) {
@@ -251,6 +371,29 @@ function buildWarnings(analysis) {
     warns.push({ sev: 'error', cat: 'Rate Limit', msg: `${rateLimited.length} intake request(s) rate-limited (429).` });
   }
 
+  const forbidden = intakeErrors.filter(e => e.status === 403);
+  if (forbidden.length > 0) {
+    const replay403 = forbidden.filter(e => isReplayUrl(e.url)).length;
+    const base = `${forbidden.length} intake request(s) rejected with 403 Forbidden${replay403 ? ` (${replay403} on the Session Replay endpoint)` : ''}.`;
+    const hint = (proxyInfo && proxyInfo.isProxied)
+      ? ' Check that the proxy forwards the client token and the dd-evp-origin query params unchanged, and that /api/v2/replay is whitelisted on the proxy.'
+      : ' Verify the client token is valid and authorized for this endpoint.';
+    warns.push({ sev: 'error', cat: 'Intake', msg: base + hint });
+  }
+
+  // Identity sanity checks from intake bodies.
+  if (bodyInsights && bodyInsights.hasData) {
+    if (bodyInsights.appIds.length > 1) {
+      warns.push({ sev: 'warn', cat: 'Identity', msg: `Multiple RUM application IDs seen in intake (${bodyInsights.appIds.length}) — events are being split across applications.`, detail: bodyInsights.appIds.join(', ') });
+    }
+    if (bodyInsights.sessionIds.length > 1) {
+      warns.push({ sev: 'info', cat: 'Identity', msg: `${bodyInsights.sessionIds.length} distinct sessions captured in this HAR.` });
+    }
+    if (bodyInsights.services.length > 1) {
+      warns.push({ sev: 'info', cat: 'Identity', msg: `Multiple service names in intake (${bodyInsights.services.length}): ${bodyInsights.services.join(', ')}.` });
+    }
+  }
+
   return warns;
 }
 
@@ -297,6 +440,28 @@ function analyzeHAR(harData, filename) {
   let sdkInitCount    = 0;
   let pageStartTime   = null;
   let firstIntakeTime = null;
+
+  // Proxy detection: when intake is relayed through a first-party origin
+  // instead of *.browser-intake-datadoghq.com.
+  const proxyHosts   = {};       // host -> request count
+  let   proxiedIntake = 0;
+  let   directIntake  = 0;
+  let   clientToken   = null;    // pub… key carried on proxied intake URLs
+  let   evpOriginVersion = null; // dd-evp-origin-version (SDK version on intake)
+
+  // Identity / config recovered from intake request bodies (NDJSON events).
+  // This is the authoritative source in a proxied setup where no inline
+  // DD_RUM.init() script is in the capture.
+  const bodyAppIds   = new Set();
+  const bodySessions = new Set();
+  const bodyViewIds  = new Set();
+  const bodyServices = new Set();
+  const bodyVersions = new Set();
+  const bodyEnvs     = new Set();
+  const bodyEventTypes = {};     // type -> count (from parsed events)
+  let   bodyConfig   = null;     // _dd.configuration block
+  let   bodySdkName  = null;     // _dd.sdk_name
+  let   intakeBodyEventCount = 0;
 
   if (pages.length > 0 && pages[0].startedDateTime) {
     pageStartTime = new Date(pages[0].startedDateTime).getTime();
@@ -350,12 +515,20 @@ function analyzeHAR(harData, filename) {
     try {
       const hostname = new URL(url).hostname;
       endpointHits[hostname] = (endpointHits[hostname] || 0) + 1;
+      if (isProxiedIntakeUrl(url)) {
+        proxiedIntake++;
+        proxyHosts[hostname] = (proxyHosts[hostname] || 0) + 1;
+      } else {
+        directIntake++;
+      }
     } catch {}
 
     try {
       const u = new URL(url);
       if (!sessionId) { const v = u.searchParams.get('dd_session_id') || u.searchParams.get('session_id'); if (v) { sessionId = v; sessionIdSource = 'URL param'; } }
       if (!appId)     { const v = u.searchParams.get('dd_app_id') || u.searchParams.get('app_id') || u.searchParams.get('application_id'); if (v) { appId = v; appIdSource = 'URL param'; } }
+      if (!clientToken)      { const v = u.searchParams.get('dd-api-key'); if (v) clientToken = v; }
+      if (!evpOriginVersion) { const v = u.searchParams.get('dd-evp-origin-version'); if (v) evpOriginVersion = v; }
     } catch {}
 
     allHeaders.forEach(h => {
@@ -363,6 +536,27 @@ function analyzeHAR(harData, filename) {
       if (!appId     && hn === 'x-datadog-application-id') { appId     = h.value; appIdSource     = 'request header'; }
       if (!sessionId && hn === 'x-datadog-session-id')     { sessionId = h.value; sessionIdSource = 'request header'; }
     });
+
+    // Parse the NDJSON intake body — richest source in a proxied capture.
+    // Replay payloads are multipart binary, not event JSON, so skip them.
+    if (!isReplayUrl(url)) {
+      const events = parseIntakeBody(entry.request?.postData?.text || '');
+      events.forEach(ev => {
+        intakeBodyEventCount++;
+        const t = ev.type || ev.status /* logs */ || 'unknown';
+        if (typeof t === 'string') bodyEventTypes[t] = (bodyEventTypes[t] || 0) + 1;
+        if (ev.application?.id) bodyAppIds.add(ev.application.id);
+        if (ev.session?.id)     bodySessions.add(ev.session.id);
+        if (ev.view?.id)        bodyViewIds.add(ev.view.id);
+        if (ev.service)         bodyServices.add(ev.service);
+        if (ev.version)         bodyVersions.add(ev.version);
+        if (ev.env)             bodyEnvs.add(ev.env);
+        if (!bodyConfig && ev._dd?.configuration) bodyConfig = ev._dd.configuration;
+        if (!bodySdkName && ev._dd?.sdk_name)      bodySdkName = ev._dd.sdk_name;
+        if (!appId     && ev.application?.id) { appId     = ev.application.id; appIdSource     = 'intake body'; }
+        if (!sessionId && ev.session?.id)     { sessionId = ev.session.id;    sessionIdSource = 'intake body'; }
+      });
+    }
 
     const WANT_REQ = new Set(['content-type','x-datadog-parent-id','x-datadog-trace-id','x-datadog-sampling-priority','x-datadog-application-id','x-datadog-session-id','dd-api-key','authorization','origin','referer','x-forwarded-for']);
     const WANT_RES = new Set(['content-type','x-ratelimit-limit','x-ratelimit-remaining','x-ratelimit-reset','x-ratelimit-period','x-datadog-trace-id','retry-after','server','access-control-allow-origin']);
@@ -403,10 +597,47 @@ function analyzeHAR(harData, filename) {
     });
   });
 
+  const proxyInfo = {
+    isProxied: proxiedIntake > 0,
+    hosts: proxyHosts,
+    proxiedIntake,
+    directIntake,
+    clientToken,
+    evpOriginVersion,
+  };
+
+  // Identity & config recovered from intake bodies.
+  const bodyInsights = {
+    eventCount:  intakeBodyEventCount,
+    appIds:      [...bodyAppIds],
+    sessionIds:  [...bodySessions],
+    viewCount:   bodyViewIds.size,
+    services:    [...bodyServices],
+    versions:    [...bodyVersions],
+    envs:        [...bodyEnvs],
+    eventTypes:  bodyEventTypes,
+    configuration: bodyConfig,   // { session_sample_rate, session_replay_sample_rate, ... }
+    sdkName:     bodySdkName,
+    hasData:     intakeBodyEventCount > 0,
+  };
+
+  // If the inline-script init config was unavailable, synthesize the parts we
+  // can from the body so downstream config checks still have something to read.
+  if (!initConfig && bodyConfig) {
+    initConfig = {
+      sessionSampleRate:       bodyConfig.session_sample_rate,
+      sessionReplaySampleRate: bodyConfig.session_replay_sample_rate,
+      service:                 bodyServices.size === 1 ? [...bodyServices][0] : undefined,
+      version:                 bodyVersions.size === 1 ? [...bodyVersions][0] : undefined,
+      env:                     bodyEnvs.size === 1 ? [...bodyEnvs][0] : undefined,
+      _source:                 'intake body',
+    };
+  }
+
   const warnings = buildWarnings({
     sdkLoads, initConfig, intakeErrors, intakeSuccess, replayRequests,
     sessionId, ddCookies, endpointHits, sdkInitCount,
-    totalEntries: entries.length, firstIntakeOffsetMs, apmCorrelations,
+    totalEntries: entries.length, firstIntakeOffsetMs, apmCorrelations, proxyInfo, bodyInsights,
   });
 
   return {
@@ -415,7 +646,7 @@ function analyzeHAR(harData, filename) {
     sessionId, sessionIdSource, appId, appIdSource,
     sdkLoads, initConfig, sdkInitCount,
     eventTypeCounts, endpointHits, warnings,
-    firstIntakeOffsetMs, apmCorrelations,
+    firstIntakeOffsetMs, apmCorrelations, proxyInfo, bodyInsights,
   };
 }
 
@@ -1055,7 +1286,7 @@ function renderFileCard(analysis) {
     filename, creator, totalEntries, ddCookies, intakeErrors, intakeSuccess,
     replayRequests, sessionId, sessionIdSource, appId, appIdSource,
     sdkLoads, initConfig, sdkInitCount, eventTypeCounts,
-    endpointHits, warnings, firstIntakeOffsetMs, apmCorrelations,
+    endpointHits, warnings, firstIntakeOffsetMs, apmCorrelations, proxyInfo, bodyInsights,
   } = analysis;
 
   const errorWarns = warnings.filter(w => w.sev === 'error');
@@ -1076,6 +1307,7 @@ function renderFileCard(analysis) {
       ${ddCookies.length      ? `<span class="badge-pill badge-info">${ddCookies.length} DD cookie${ddCookies.length > 1 ? 's' : ''}</span>` : ''}
       ${sessionId             ? `<span class="badge-pill badge-success">RUM session</span>` : ''}
       ${replayRequests.length ? `<span class="badge-pill badge-purple">${replayRequests.length} replay</span>` : ''}
+      ${proxyInfo && proxyInfo.isProxied ? `<span class="badge-pill badge-info"><i class="bi bi-hdd-network"></i> proxied intake</span>` : ''}
     </div>
   `;
   card.appendChild(header);
@@ -1083,12 +1315,13 @@ function renderFileCard(analysis) {
   const strip = document.createElement('div');
   strip.className = 'summary-strip';
   const rumSdk = sdkLoads.find(s => s.type === 'rum' || s.type === 'rum-slim');
+  const displaySdkVersion = (rumSdk && rumSdk.version) || (proxyInfo && proxyInfo.evpOriginVersion) || (rumSdk ? '?' : null);
   strip.innerHTML = `
     <div class="stat-cell"><div class="stat-label">Total requests</div><div class="stat-value">${totalEntries.toLocaleString()}</div></div>
     <div class="stat-cell"><div class="stat-label">Intake ok</div><div class="stat-value ${intakeSuccess.length > 0 ? 'v-success' : ''}">${intakeSuccess.length}</div></div>
     <div class="stat-cell"><div class="stat-label">Intake errors</div><div class="stat-value ${intakeErrors.length > 0 ? 'v-danger' : ''}">${intakeErrors.length}</div></div>
     <div class="stat-cell"><div class="stat-label">Session replay</div><div class="stat-value ${replayRequests.length > 0 ? 'v-purple' : ''}">${replayRequests.length}</div></div>
-    <div class="stat-cell"><div class="stat-label">SDK version</div><div class="stat-value v-primary" style="font-size:1.1rem">${rumSdk ? escHtml(rumSdk.version || '?') : '–'}</div></div>
+    <div class="stat-cell"><div class="stat-label">SDK version</div><div class="stat-value v-primary" style="font-size:1.1rem">${displaySdkVersion ? escHtml(displaySdkVersion) : '–'}</div></div>
     <div class="stat-cell"><div class="stat-label">Warnings</div><div class="stat-value ${warnings.length > 0 ? 'v-warn' : ''}">${warnings.length}</div></div>
   `;
   card.appendChild(strip);
@@ -1111,6 +1344,106 @@ function renderFileCard(analysis) {
     });
     warnBlock.appendChild(warnList);
     card.appendChild(warnBlock);
+  }
+
+  if (proxyInfo && proxyInfo.isProxied) {
+    const proxyBlock = document.createElement('div');
+    proxyBlock.className = 'section-block';
+    proxyBlock.innerHTML = `<div class="block-heading"><i class="bi bi-hdd-network"></i> Intake routing (proxy)</div><p class="section-caveat"><i class="bi bi-info-circle"></i> Intake is being relayed through a first-party origin rather than sent directly to <code>*.browser-intake-datadoghq.com</code>. Detected via the SDK's intake path and query signature.</p>`;
+    const rows = [
+      { key: 'Routing',            val: proxyInfo.directIntake > 0 ? 'Mixed (proxied + direct)' : 'Proxied' },
+      { key: 'Proxy host(s)',      val: Object.entries(proxyInfo.hosts).map(([h, c]) => `${h} (${c})`).join(', ') || '–' },
+      { key: 'Proxied requests',   val: String(proxyInfo.proxiedIntake) },
+      { key: 'Direct requests',    val: String(proxyInfo.directIntake) },
+      { key: 'Client token (dd-api-key)', val: proxyInfo.clientToken || '–' },
+      { key: 'Intake SDK version (dd-evp-origin-version)', val: proxyInfo.evpOriginVersion || '–' },
+    ];
+    const detailRows = document.createElement('div'); detailRows.className = 'detail-rows';
+    rows.forEach(({ key, val }) => {
+      const row = document.createElement('div'); row.className = 'detail-row';
+      row.innerHTML = `<span class="detail-row-key">${escHtml(key)}</span><span class="detail-row-val">${escHtml(val)}</span>`;
+      detailRows.appendChild(row);
+    });
+    proxyBlock.appendChild(detailRows);
+    card.appendChild(proxyBlock);
+  }
+
+  // ── Recovered identity & configuration (from intake bodies) ──────────
+  if (bodyInsights && bodyInsights.hasData) {
+    const idBlock = document.createElement('div');
+    idBlock.className = 'section-block';
+
+    const cfg = bodyInsights.configuration || {};
+    const fmtPct = v => (v == null ? null : `${v}%`);
+    const idCard = (label, value, mono = true, accent = false) => `
+      <div class="id-card${accent ? ' id-card-accent' : ''}">
+        <div class="id-card-label">${escHtml(label)}</div>
+        <div class="id-card-value${mono ? ' mono' : ''}${value ? '' : ' empty'}">${value ? escHtml(value) : 'not present'}</div>
+      </div>`;
+
+    const appVal = bodyInsights.appIds.length === 1 ? bodyInsights.appIds[0]
+                 : bodyInsights.appIds.length > 1 ? `${bodyInsights.appIds.length} apps` : null;
+    const sessVal = bodyInsights.sessionIds.length === 1 ? bodyInsights.sessionIds[0]
+                 : bodyInsights.sessionIds.length > 1 ? `${bodyInsights.sessionIds.length} sessions` : null;
+    const svcVal = bodyInsights.services.join(', ') || null;
+    const verVal = bodyInsights.versions.join(', ') || null;
+    const envVal = bodyInsights.envs.join(', ') || null;
+
+    // Identity chips grid
+    const grid = `
+      <div class="id-grid">
+        ${idCard('Application ID', appVal, true, true)}
+        ${idCard('Session ID', sessVal, true, true)}
+        ${idCard('Service', svcVal, false)}
+        ${idCard('Version', verVal, false)}
+        ${idCard('Environment', envVal, false)}
+        ${idCard('Views captured', bodyInsights.viewCount ? String(bodyInsights.viewCount) : null, false)}
+      </div>`;
+
+    // Event-type breakdown bar
+    const typeEntries = Object.entries(bodyInsights.eventTypes).sort((a, b) => b[1] - a[1]);
+    const totalEv = typeEntries.reduce((s, [, c]) => s + c, 0) || 1;
+    const typeColors = {
+      view: '#6b2fa0', action: '#2f9e7e', error: '#d9534f', resource: '#3b82c4',
+      long_task: '#e0982c', replay: '#9b59b6', unknown: '#7a95a8',
+    };
+    const colorFor = t => typeColors[t] || '#7a95a8';
+    const bar = typeEntries.length ? `
+      <div class="ev-breakdown">
+        <div class="ev-bar">
+          ${typeEntries.map(([t, c]) => `<span class="ev-seg" style="width:${(c / totalEv * 100).toFixed(1)}%;background:${colorFor(t)}" title="${escHtml(t)}: ${c}"></span>`).join('')}
+        </div>
+        <div class="ev-legend">
+          ${typeEntries.map(([t, c]) => `<span class="ev-key"><span class="ev-dot" style="background:${colorFor(t)}"></span>${escHtml(t)} <strong>${c}</strong></span>`).join('')}
+        </div>
+      </div>` : '';
+
+    // Sample-rate meters
+    const meters = [
+      ['Session sample rate', cfg.session_sample_rate],
+      ['Replay sample rate', cfg.session_replay_sample_rate],
+      ['Trace sample rate', cfg.trace_sample_rate],
+      ['Profiling sample rate', cfg.profiling_sample_rate],
+    ].filter(([, v]) => v != null);
+    const meterHtml = meters.length ? `
+      <div class="rate-meters">
+        ${meters.map(([label, v]) => {
+          const low = v === 0;
+          return `<div class="rate-meter">
+            <div class="rate-meter-top"><span>${escHtml(label)}</span><span class="rate-val${low ? ' rate-zero' : ''}">${fmtPct(v)}</span></div>
+            <div class="rate-track"><span class="rate-fill${low ? ' rate-fill-zero' : ''}" style="width:${Math.max(2, v)}%"></span></div>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    idBlock.innerHTML = `
+      <div class="block-heading"><i class="bi bi-fingerprint"></i> Recovered identity &amp; configuration</div>
+      <p class="section-caveat"><i class="bi bi-info-circle"></i> Read directly from ${bodyInsights.eventCount.toLocaleString()} event(s) in the intake payloads — authoritative even when the capture has no inline init script.</p>
+      ${grid}
+      ${typeEntries.length ? `<div class="id-subhead">Event types (${totalEv.toLocaleString()})</div>${bar}` : ''}
+      ${meters.length ? `<div class="id-subhead">Resolved sample rates</div>${meterHtml}` : ''}
+    `;
+    card.appendChild(idBlock);
   }
 
   const sdkBlock = document.createElement('div');
@@ -1386,9 +1719,24 @@ function buildTextSummary(a) {
     `DD cookies:            ${a.ddCookies.length}`,
     ``,
     `--- RUM Identifiers ---`,
-    `Session ID:    ${a.sessionId || 'not found'}`,
-    `Application ID:${a.appId     || 'not found'}`,
+    `Session ID:    ${a.sessionId || 'not found'}${a.sessionIdSource ? ' (via ' + a.sessionIdSource + ')' : ''}`,
+    `Application ID:${a.appId     || 'not found'}${a.appIdSource ? ' (via ' + a.appIdSource + ')' : ''}`,
+    ...(a.bodyInsights && a.bodyInsights.hasData ? [
+      `Service:       ${a.bodyInsights.services.join(', ') || '–'}`,
+      `Version:       ${a.bodyInsights.versions.join(', ') || '–'}`,
+      `Env:           ${a.bodyInsights.envs.join(', ') || '–'}`,
+      `Views:         ${a.bodyInsights.viewCount}`,
+      `Events parsed: ${a.bodyInsights.eventCount}`,
+    ] : []),
     ``,
+    ...(a.proxyInfo && a.proxyInfo.isProxied ? [
+      `--- Intake Routing ---`,
+      `Mode:          ${a.proxyInfo.directIntake > 0 ? 'mixed (proxied + direct)' : 'proxied'}`,
+      `Proxy host(s): ${Object.keys(a.proxyInfo.hosts).join(', ') || '–'}`,
+      `Proxied reqs:  ${a.proxyInfo.proxiedIntake}`,
+      `Direct reqs:   ${a.proxyInfo.directIntake}`,
+      ``,
+    ] : []),
     `--- Diagnostics ---`,
     ...(warns.length === 0 ? ['No warnings.'] : warns.map(w => `[${w.sev.toUpperCase()}] [${w.cat}] ${w.msg}`)),
   ].join('\n');
@@ -1398,6 +1746,8 @@ function exportJSON(analysis) {
   const data = {
     filename: analysis.filename, totalEntries: analysis.totalEntries,
     rum: { sessionId: analysis.sessionId, appId: analysis.appId },
+    proxy: analysis.proxyInfo || null,
+    identity: analysis.bodyInsights || null,
     sdk: { loads: analysis.sdkLoads, initConfig: analysis.initConfig },
     warnings: analysis.warnings,
     ddCookies: analysis.ddCookies.map(c => ({ name: c.name, value: c.value, url: c.url })),

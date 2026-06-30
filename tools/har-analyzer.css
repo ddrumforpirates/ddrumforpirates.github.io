@@ -13,6 +13,13 @@
   --muted:         #7a95a8;
   --card-border:   #e0eaf0;
   --light-bg:      #f5f8fa;
+
+  /* Shared layout: sidebar offset + one content column that the hero,
+     tab bar, and panels all align to, so left edges and the tab divider
+     line up instead of floating in whitespace. */
+  --sidebar:       300px;
+  --content-max:   780px;
+  --gutter:        2rem;
 }
 
 /* ── Hero ── */
@@ -33,9 +40,9 @@
 
 .tools #hero .hero-container {
   width: 100%;
-  max-width: 960px;
-  margin-left: 300px;
-  padding: 0 2rem;
+  max-width: calc(var(--sidebar) + var(--content-max) + var(--gutter) * 2);
+  margin-left: var(--sidebar);
+  padding: 0 var(--gutter);
   text-align: left;
 }
 
@@ -76,13 +83,19 @@
 }
 
 /* ── Tabs ── */
+/* .har-tabs lives inside #main, which already clears the sidebar, so the row
+   spans the full content width. The inner wrapper caps the tabs to the same
+   column as the panels below, and the full-width border reads as a clean rule. */
 .har-tabs {
-  margin-left: 300px;
-  padding: 0 2rem;
+  background: #fff;
+  border-bottom: 2px solid var(--card-border);
+}
+
+.har-tabs-inner {
+  max-width: calc(var(--content-max) + var(--gutter) * 2);
+  padding: 0 var(--gutter);
   display: flex;
   gap: 0;
-  border-bottom: 2px solid var(--card-border);
-  background: #fff;
 }
 
 .har-tab {
@@ -103,31 +116,31 @@
   white-space: nowrap;
 }
 
+.har-tab:first-child { padding-left: 0; }
+
 .har-tab i { font-size: 0.9rem; }
 .har-tab:hover { color: var(--heading); }
 .har-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
 @media (max-width: 1199px) {
-  .har-tabs { margin-left: 0; padding: 0 1rem; }
+  .har-tabs-inner { padding: 0 1rem; }
 }
 
 /* ── Main content ── */
 .har-section {
   padding: 1.5rem 0 3rem;
   background: #fff;
-  margin-left: 300px;
 }
 
 .har-container {
-  max-width: 660px;
-  padding: 0 2rem;
+  max-width: calc(var(--content-max) + var(--gutter) * 2);
+  padding: 0 var(--gutter);
   margin-left: 0 !important;
   margin-right: 0 !important;
 }
 
 @media (max-width: 1199px) {
   .har-container { padding: 0 1rem; }
-  .har-section { margin-left: 0; }
 }
 
 /* ── Drop Zone ── */
@@ -1025,3 +1038,48 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 }
 
 .rate-fill.rate-fill-zero { background: var(--muted); opacity: 0.5; }
+
+/* ── Error layer attribution (CDN vs Datadog intake) ─────────────── */
+.err-layer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.err-layer i { font-size: 0.72rem; }
+
+.err-layer-cdn {
+  background: #fdeede;
+  color: #b45f06;
+  border: 1px solid #f5c98a;
+}
+
+.err-layer-intake {
+  background: #efe6f7;
+  color: var(--primary);
+  border: 1px solid #d9c4ec;
+}
+
+.err-layer-net {
+  background: #fbe4e4;
+  color: #b02a2a;
+  border: 1px solid #f0b6b6;
+}
+
+.err-reason {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--light-bg);
+  border-left: 3px solid #e0982c;
+  border-radius: 0 6px 6px 0;
+  padding: 9px 12px;
+}

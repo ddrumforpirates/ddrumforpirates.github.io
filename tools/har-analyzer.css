@@ -1083,3 +1083,63 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   border-radius: 0 6px 6px 0;
   padding: 9px 12px;
 }
+
+/*--------------------------------------------------------------
+  Captain's Tools theme override (purple & gold)
+  Applies when <body class="tools theme-pirate-tools">
+  Re-points this file's own :root variables to the dark theme,
+  then patches the handful of hardcoded #fff panels so nothing
+  reads as a stray white card floating on the dark page.
+  Semantic status colors (success/danger/warning/info badges)
+  are left as-is since they carry meaning independent of theme.
+  --------------------------------------------------------------*/
+body.theme-pirate-tools {
+  --primary: var(--pt-purple-light);
+  --primary-hover: var(--pt-gold);
+  --heading: var(--pt-text);
+  --text: var(--pt-text);
+  --muted: var(--pt-muted);
+  --card-border: var(--pt-border);
+  --light-bg: rgba(255, 255, 255, 0.05);
+}
+
+body.theme-pirate-tools .tools #hero,
+body.theme-pirate-tools.tools #hero {
+  background: var(--pt-purple);
+}
+
+body.theme-pirate-tools .har-tabs,
+body.theme-pirate-tools .har-section,
+body.theme-pirate-tools .cfg-row,
+body.theme-pirate-tools .apm-stat,
+body.theme-pirate-tools .qi-card,
+body.theme-pirate-tools #disclaimer-modal {
+  background: var(--pt-surface);
+}
+
+body.theme-pirate-tools #drop-zone,
+body.theme-pirate-tools #drop-zone-queries {
+  background: var(--pt-surface);
+}
+body.theme-pirate-tools #drop-zone:hover,
+body.theme-pirate-tools #drop-zone.drag-over,
+body.theme-pirate-tools #drop-zone-queries:hover,
+body.theme-pirate-tools #drop-zone-queries.drag-over {
+  background: rgba(99, 44, 166, 0.22);
+}
+
+body.theme-pirate-tools .collapsible-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body.theme-pirate-tools #disclaimer-modal p {
+  color: var(--pt-muted);
+}
+
+body.theme-pirate-tools .drop-title code,
+body.theme-pirate-tools .qi-intro code {
+  background: rgba(139, 92, 199, 0.18);
+  border-color: var(--pt-border);
+  color: var(--pt-text);
+}
+

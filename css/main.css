@@ -13,6 +13,8 @@
   --text: #272829;
   --light-bg: #f5f8fd;
   --card-border: #e6eef6;
+  --pt-gold: #ffc107;
+  --pt-gold-light: #ffda5d;
 }
 
 /*--------------------------------------------------------------
@@ -93,24 +95,45 @@ h1, h2, h3, h4, h5, h6 {
 /* Social/icon links */
 #header .profile .social-links {
   margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 #header .profile .social-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #fff;
+  text-decoration: none;
+  transition: color 0.2s ease, transform 0.12s ease;
+}
+#header .profile .social-links a i {
   font-size: 18px;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   background: #212431;
   color: #fff;
-  padding: 8px 0;
-  margin-right: 6px;
   border-radius: 50%;
-  text-align: center;
   width: 36px;
   height: 36px;
-  vertical-align: middle;
-  transition: background 0.2s ease, transform 0.12s ease;
+  transition: background 0.2s ease;
+}
+#header .profile .social-links a span {
+  white-space: nowrap;
 }
 #header .profile .social-links a:hover {
+  color: var(--primary);
+  transform: translateX(4px);
+}
+#header .profile .social-links a:hover i {
   background: var(--primary);
-  transform: translateY(-2px);
 }
 
 /*--------------------------------------------------------------
@@ -409,13 +432,25 @@ ul { list-style-type: none; padding-left: 0; }
 }
 
 .rum-resources #hero {
-  min-height: 38vh;
-  background: #ffffff;
+  min-height: 28vh;
+  background: #6d2f8f;
   background-image: none;
+  background-attachment: scroll;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid #eef6fb;
+  border-bottom: none;
   padding: 3.5rem 0;
+}
+
+.rum-resources #hero h1 {
+  color: #ffffff;
+  font-size: 48px;
+}
+
+.rum-resources #hero p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 20px;
+  margin-bottom: 0;
 }
 .rum-resources #hero .hero-container { width: 100%; max-width: 960px; margin-left: 300px; padding: 0 2rem; }
 .rum-resources #main { margin-left: 300px; background: #fff; }
@@ -427,9 +462,150 @@ ul { list-style-type: none; padding-left: 0; }
   .rum-resources #main { margin-left: 0; }
 }
 
+/* allow iframe in hero to render without clipping */
+#hero { overflow: visible; }
+
 /*--------------------------------------------------------------
-  Tools nav icon (added for /tools/ page)
-  Append this block to the END of css/main.css
+  "Captain's Tools" theme (purple & gold)
+  Add class="theme-pirate-tools" to <body> on /test, /rumresources/,
+  /games, and /tools pages to apply. Purely visual — no auth involved.
   --------------------------------------------------------------*/
-#header .profile .social-links a.tools { color: #fff; }
-#header .profile .social-links a.tools:hover { background: var(--primary); }
+body.theme-pirate-tools {
+  --pt-bg: #090910;
+  --pt-surface: rgba(20, 20, 31, 0.94);
+  --pt-border: rgba(255, 255, 255, 0.11);
+  --pt-text: #f5f2ff;
+  --pt-muted: #aaa3ba;
+  --pt-purple: #632ca6;
+  --pt-purple-light: #8b5cc7;
+  --pt-purple-glow: rgba(99, 44, 166, 0.38);
+
+  position: relative;
+  color: var(--pt-text);
+  background:
+    radial-gradient(circle at 20% 15%, rgba(99, 44, 166, 0.30), transparent 35%),
+    radial-gradient(circle at 85% 80%, rgba(255, 193, 7, 0.11), transparent 30%),
+    linear-gradient(145deg, #050508 0%, #11101a 50%, #08080d 100%);
+  background-attachment: fixed;
+}
+
+/* faint grid overlay, matches the login page */
+body.theme-pirate-tools::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+body.theme-pirate-tools #header {
+  background: #0c0c14;
+  border-right: 1px solid var(--pt-border);
+}
+
+body.theme-pirate-tools #main {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  color: var(--pt-text);
+}
+
+body.theme-pirate-tools a { color: var(--pt-gold); }
+body.theme-pirate-tools a:hover { color: var(--pt-gold-light); }
+
+body.theme-pirate-tools h1,
+body.theme-pirate-tools h2,
+body.theme-pirate-tools h3,
+body.theme-pirate-tools .section-title p,
+body.theme-pirate-tools #hero p {
+  color: var(--pt-text);
+}
+
+body.theme-pirate-tools .section-title h2::after {
+  background: linear-gradient(90deg, var(--pt-purple), var(--pt-gold));
+}
+
+/* frosted-glass card treatment, with the same top accent bar as the login page */
+body.theme-pirate-tools #form-section .container,
+body.theme-pirate-tools #docs .container,
+body.theme-pirate-tools .ui {
+  position: relative;
+  overflow: hidden;
+  padding: 32px;
+  background: var(--pt-surface);
+  border: 1px solid var(--pt-border);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 0 35px var(--pt-purple-glow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+body.theme-pirate-tools #form-section .container::before,
+body.theme-pirate-tools #docs .container::before,
+body.theme-pirate-tools .ui::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--pt-purple), var(--pt-gold), var(--pt-purple-light));
+}
+
+/* dark, purple-bordered inputs (test page + tic-tac-toe cells) */
+body.theme-pirate-tools .form-control,
+body.theme-pirate-tools input.cell {
+  background: rgba(5, 5, 10, 0.7);
+  border: 1px solid #3f3b4b;
+  color: var(--pt-text);
+}
+body.theme-pirate-tools .form-control:focus,
+body.theme-pirate-tools input.cell:focus {
+  border-color: var(--pt-purple-light);
+  background: rgba(9, 8, 15, 0.94);
+  box-shadow: 0 0 0 4px rgba(139, 92, 199, 0.17);
+  color: var(--pt-text);
+}
+body.theme-pirate-tools .form-control::placeholder {
+  color: #716b7e;
+}
+
+/* gold gradient button — usable on any page, themed or not */
+.btn-gold {
+  background: linear-gradient(135deg, var(--pt-gold), var(--pt-gold-light));
+  border: 0;
+  color: #18120a;
+  font-weight: 700;
+  box-shadow: 0 12px 28px rgba(255, 193, 7, 0.16);
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.btn-gold:hover {
+  filter: brightness(1.05);
+  box-shadow: 0 16px 34px rgba(255, 193, 7, 0.22);
+  color: #18120a;
+}
+.btn-gold:active {
+  transform: translateY(1px);
+}
+
+/* rumresources doc links restyled as dark cards */
+body.theme-pirate-tools .list-group-item {
+  background: rgba(20, 20, 31, 0.7);
+  border: 1px solid var(--pt-border);
+  color: var(--pt-text);
+}
+body.theme-pirate-tools .list-group-item:hover {
+  background: rgba(30, 25, 45, 0.85);
+  box-shadow: 0 0 20px var(--pt-purple-glow);
+}
+body.theme-pirate-tools .list-group-item h5 { color: var(--pt-gold-light); }
+body.theme-pirate-tools .list-group-item p { color: var(--pt-muted); }
+body.theme-pirate-tools .list-group-item i { color: var(--pt-muted); }
+
+/* tie the rumresources hero band into the same purple */
+body.theme-pirate-tools.rum-resources #hero {
+  background: var(--pt-purple);
+}
+

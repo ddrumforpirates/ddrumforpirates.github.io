@@ -17,13 +17,11 @@
 
 /* General Page Styling */
 html {
-  background: #fff !important; /* prevent html element showing through at bottom */
   min-height: 100%;
 }
 
 body {
-  background: #fff !important;
-  color: #2e2e2e;
+  color: var(--pt-text, #f5f2ff);
   font-family: "Poppins", sans-serif;
   margin: 0;
   padding: 0;
@@ -33,7 +31,7 @@ body {
 
 /* Headings & Instructions */
 h1, #ins, #print {
-  color: #632ca6;
+  color: var(--pt-text, #f5f2ff);
   font-weight: 600;
   text-align: center;
 }
@@ -41,12 +39,13 @@ h1, #ins, #print {
 #ins {
   font-size: 1rem;
   margin-bottom: 1rem;
+  color: var(--pt-muted, #aaa3ba);
 }
 
 #print {
   font-size: 1.3rem;
   font-weight: 600;
-  color: #4d1f80;
+  color: var(--pt-gold-light, #ffda5d);
   margin-top: 1rem;
 }
 
@@ -95,19 +94,19 @@ h1, #ins, #print {
 }
 
 .cell:hover {
-  background: #ece2f8;
+  background: rgba(99, 44, 166, 0.25);
   transform: scale(1.05);
 }
 
 /* X and O colors */
 .cell[value="X"],
 .cell:read-only[value="X"] {
-  color: #4d1f80;
+  color: var(--pt-gold, #ffc107);
 }
 
 .cell[value="O"],
 .cell:read-only[value="O"] {
-  color: #9c6ade;
+  color: var(--pt-purple-light, #8b5cc7);
 }
 
 /* Reset Button */
@@ -156,3 +155,4 @@ h1, #ins, #print {
     font-size: 1.8rem;
   }
 }
+

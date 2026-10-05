@@ -136,6 +136,66 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--primary);
 }
 
+/* Nested menu group ("Tools" > HAR Analyzer / RUM Event Parser)
+   The parent is a label, not a link; children are indented under it with a
+   guide line aligned to the centre of the parent's 36px icon circle. */
+#header .profile .social-links .nav-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+#header .profile .social-links .nav-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #fff;
+  cursor: default;
+}
+#header .profile .social-links .nav-group-label i {
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #212431;
+  color: #fff;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+}
+#header .profile .social-links .nav-sub-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 6px 0 0 17px;
+  padding-left: 27px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+#header .profile .social-links a.nav-sub {
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.78);
+}
+#header .profile .social-links a.nav-sub i {
+  width: auto;
+  height: auto;
+  font-size: 14px;
+  background: none;
+  border-radius: 0;
+  color: var(--muted);
+}
+#header .profile .social-links a.nav-sub:hover i {
+  background: none;
+  color: var(--primary);
+}
+#header .profile .social-links a.nav-sub.active,
+#header .profile .social-links a.nav-sub.active i {
+  color: var(--pt-gold);
+}
+
 /*--------------------------------------------------------------
   Main layout & responsive breakpoints
   --------------------------------------------------------------*/
@@ -471,6 +531,12 @@ ul { list-style-type: none; padding-left: 0; }
   /games, and /tools pages to apply. Purely visual — no auth involved.
   --------------------------------------------------------------*/
 body.theme-pirate-tools {
+  /* html/body are both height:100% above, which clamps <body> to one viewport
+     and leaves <html>'s white showing below the fold on any page taller than
+     the screen. Let the themed body grow with its content instead. */
+  height: auto;
+  min-height: 100%;
+
   --pt-bg: #090910;
   --pt-surface: rgba(20, 20, 31, 0.94);
   --pt-border: rgba(255, 255, 255, 0.11);

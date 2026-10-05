@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RUM Event Parser – Havana Club Tools</title>
+  <meta name="description" content="Paste or upload a Datadog RUM event as JSON and break it out into readable sections: custom attributes, application, browser, device, geo, session, replay and retention." />
+  <meta name="author" content="Naveen G." />
+  <meta name="theme-color" content="#000000" />
+
+  <!-- Favicons -->
+  <link rel="icon" href="/img/favicon.ico" />
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700|Raleway:300,400,500,600,700|Poppins:300,400,500,600,700" rel="stylesheet" />
+
+  <!-- Vendor CSS -->
+  <link href="/css/vendor/aos.css" rel="stylesheet" />
+  <link href="/css/vendor/bootstrap.min.css" rel="stylesheet" />
+  <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet" />
+  <link href="/css/vendor/boxicons.min.css" rel="stylesheet" />
+  <link href="/css/vendor/glightbox.min.css" rel="stylesheet" />
+  <link href="/css/vendor/swiper-bundle.min.css" rel="stylesheet" />
+
+  <!-- Main CSS -->
+  <link href="/css/main.css" rel="stylesheet" />
+
+  <!-- RUM Event Parser CSS -->
+  <link href="/tools/rum-event-parser/rum-event-parser.css" rel="stylesheet" />
+
+  <!-- Datadog RUM -->
+  <script src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-rum.js" type="text/javascript" crossorigin></script>
+  <script>
+    window.DD_RUM && window.DD_RUM.init({
+      clientToken: 'pub02889030d6147b469c6736c64e609b35',
+      applicationId: '012a1d19-38df-4e55-9412-6ceb64e72490',
+      site: 'datadoghq.com',
+      service: 'datadogrum-pirates-tools',
+      env: 'test',
+      version: '2.0.0',
+      sessionSampleRate: 100,
+      sessionReplaySampleRate: 100,
+      trackUserInteractions: true,
+      trackResources: true,
+      trackLongTasks: true,
+      trackingConsent: 'granted',
+      defaultPrivacyLevel: 'allow',
+      sessionPersistence: 'local-storage',
+      trackAnonymousUser: false,
+      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
+    });
+    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
+    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('page_type', 'tools');
+    window.DD_RUM && window.DD_RUM.setGlobalContextProperty('client_time', {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      utc_offset: new Date().getTimezoneOffset(),
+      locale: navigator.language
+    });
+  </script>
+
+  <!-- Datadog Logs -->
+  <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-logs.js"></script>
+  <script>
+    window.DD_LOGS && window.DD_LOGS.init({
+      clientToken: 'pub02889030d6147b469c6736c64e609b35',
+      site: 'datadoghq.com',
+      forwardErrorsToLogs: true,
+      sessionSampleRate: 100
+    });
+  </script>
+</head>
+
+<!-- .rum-parser scopes the hero + layout overrides in rum-event-parser.css -->
+<body class="rum-parser theme-pirate-tools">
+
+  <!-- Mobile Nav Toggle -->
+  <i class="bi bi-list mobile-nav-toggle d-xl-none"></i>
+
+  <!-- Sidebar -->
+  <header id="header">
+    <div class="d-flex flex-column">
+      <div class="profile">
+        <img src="/img/profile-pic.jpg" alt="Captain's Profile Pic" class="img-fluid rounded-circle" />
+        <h1 class="text-light"><a href="/index.html">YO HO HO AND A BOTTLE OF RUM!</a></h1>
+        <div class="social-links mt-3 text-center">
+          <a href="/index.html" class="home" title="Home"><i class="bx bx-home"></i><span>Home</span></a>
+          <a href="https://open.spotify.com/user/ng1992?si=96d4cd71a7ce48f3" class="spotify" target="_blank" rel="noopener" title="Spotify"><i class="bi bi-spotify"></i><span>StarryKnights Spotify Profile</span></a>
+          <a href="/games/tic.html" class="joystick" title="Games"><i class="bi bi-controller"></i><span>Tic-Tac-Toe</span></a>
+          <a href="/test/index.html" class="wrench" title="Test"><i class="bi bi-wrench"></i><span>Test Inputs</span></a>
+          <a href="/rumresources/" class="rum" title="RUM Resources"><i class="bi bi-bar-chart-line"></i><span>RUM Links</span></a>
+          <div class="nav-group">
+            <span class="nav-group-label"><i class="bi bi-tools"></i><span>Tools</span></span>
+            <div class="nav-sub-list">
+              <a href="/tools/har-analyzer/" class="nav-sub"><i class="bi bi-file-earmark-code"></i><span>HAR Analyzer</span></a>
+              <a href="/tools/rum-event-parser/" class="nav-sub active" aria-current="page"><i class="bi bi-braces"></i><span>RUM Event Parser</span></a>
+            </div>
+          </div>
+          <a href="#" onclick="alert('Arrr, ye walk the plank, matey!!');" class="bug" title="Bug"><i class="bi bi-bug"></i><span>Click at your own risk!</span></a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section id="hero" class="d-flex align-items-center">
+    <div class="hero-container" data-aos="fade-in">
+      <h1>RUM Event Parser</h1>
+      <p>Paste a RUM event as JSON, or drop a <code>.json</code> file, and read it as sections instead of a wall of braces. Sessions, views, actions, errors, resources — whatever fields the event has, it lays them out.</p>
+    </div>
+  </section>
+
+  <!-- Main -->
+  <main id="main">
+    <div class="rp-wrap">
+
+      <!-- Input. data-dd-privacy keeps pasted/parsed content out of this site's own Session Replay. -->
+      <details id="rp-input" class="rp-card rp-input" open>
+        <summary>
+          <i class="bi bi-chevron-right" aria-hidden="true"></i>
+          <span class="rp-input-title">Input</span>
+          <span id="rp-input-status" class="rp-input-status"></span>
+          <span class="rp-input-edit">Edit input</span>
+        </summary>
+
+        <div class="rp-input-body" data-dd-privacy="hidden">
+          <div id="rp-drop" class="rp-drop" role="region" aria-label="JSON file upload area">
+            <input type="file" id="rp-file" accept=".json,.ndjson,.txt,application/json" aria-label="Select a JSON file" />
+            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
+            <div>
+              <div class="rp-drop-title">Drop a <code>.json</code> file here or <span class="rp-drop-cta">click to browse</span></div>
+              <div class="rp-drop-sub">Nothing is uploaded — it is parsed in this tab</div>
+            </div>
+          </div>
+
+          <label for="rp-text" class="rp-or">…or paste the JSON body</label>
+          <textarea id="rp-text" class="rp-text" rows="9" spellcheck="false" autocomplete="off"
+            data-placeholder='{ "id": "…", "content": { "attributes": { … } } }'
+            placeholder='{ "id": "…", "content": { "attributes": { … } } }'></textarea>
+
+          <div class="rp-actions">
+            <button type="button" id="rp-parse" class="btn btn-gold rp-parse">Parse event</button>
+            <button type="button" id="rp-sample" class="rp-btn rp-btn-ghost">Load sample</button>
+            <button type="button" id="rp-clear" class="rp-btn rp-btn-ghost">Clear</button>
+            <span class="rp-hint-keys">Pasting parses automatically · <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> re-parses</span>
+          </div>
+
+          <div id="rp-error" class="rp-error" role="alert" hidden></div>
+          <p class="rp-privacy">Works with RUM Explorer “Copy as JSON”, Events API responses, raw SDK events, arrays of events, and NDJSON. Content you paste here is hidden from this site’s own Session Replay.</p>
+        </div>
+      </details>
+
+      <!-- Results -->
+      <div id="rp-results" class="rp-results" aria-live="polite" data-dd-privacy="hidden"></div>
+
+    </div>
+
+    <!-- Back to Top -->
+    <a href="#" class="back-to-top d-flex align-items-center justify-content-center">
+      <i class="bi bi-arrow-up-short"></i>
+    </a>
+  </main>
+
+  <!-- Vendor JS -->
+  <script src="/js/vendor/purecounter.js"></script>
+  <script src="/js/vendor/aos.js"></script>
+  <script src="/js/vendor/bootstrap.bundle.min.js"></script>
+  <script src="/js/vendor/glightbox.min.js"></script>
+  <script src="/js/vendor/isotope.pkgd.min.js"></script>
+  <script src="/js/vendor/swiper-bundle.min.js"></script>
+  <script src="/js/vendor/typed.min.js"></script>
+  <script src="/js/vendor/noframework.waypoints.js"></script>
+  <script src="/js/vendor/validate.js"></script>
+
+  <!-- Main JS -->
+  <script src="/js/main.js"></script>
+
+  <!-- RUM Event Parser JS -->
+  <script src="/tools/rum-event-parser/rum-event-parser.js"></script>
+
+</body>
+</html>

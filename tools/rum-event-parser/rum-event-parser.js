@@ -124,7 +124,7 @@
     const fallback = () => {
       const ta = Object.assign(document.createElement('textarea'), { value: text });
       Object.assign(ta.style, { position: 'fixed', opacity: '0' });
-      document.body.appendChild(ta); ta.select();
+      ta.setAttribute('data-dd-privacy', 'hidden'); document.body.appendChild(ta); ta.select();
       try { document.execCommand('copy'); done(); } catch (_) { /* nothing more we can do */ }
       document.body.removeChild(ta);
     };
@@ -638,6 +638,18 @@
   }
   function clearError() { const b = $('rp-error'); b.hidden = true; b.textContent = ''; }
 
+  // Browsers quote a slice of the input in JSON.parse errors, e.g.
+  //   Unexpected token 'x', "jane@acme.co"... is not valid JSON
+  // so never show or log err.message. Report only where parsing failed.
+  function describeParseError(err) {
+    const msg = String((err && err.message) || '');
+    let m = msg.match(/line (\d+) column (\d+)/i);
+    if (m) return 'Parse error at line ' + m[1] + ', column ' + m[2] + '.';
+    m = msg.match(/position (\d+)/i);
+    if (m) return 'Parse error at character ' + m[1] + '.';
+    return 'The text could not be parsed as JSON.';
+  }
+
   let loadedText = null;     // set when a large file is loaded without echoing it into the textarea
   let loadedName = '';
 
@@ -653,7 +665,7 @@
       root = parseJsonLoose(text);
     } catch (err) {
       $('rp-results').textContent = '';
-      showError('That doesn’t look like valid JSON.', err.message);
+      showError('That doesn’t look like valid JSON.', describeParseError(err));
       return;
     }
     const rawEvents = extractEvents(root);
@@ -686,7 +698,7 @@
     if (!file) return;
     if (file.size > MAX_INPUT_BYTES) { showError('That file is too large.', fmtBytes(file.size) + ' — the limit is ' + fmtBytes(MAX_INPUT_BYTES) + '.'); return; }
     let text;
-    try { text = await file.text(); } catch (e) { showError('Couldn’t read that file.', e.message); return; }
+    try { text = await file.text(); } catch (e) { showError('Couldn’t read that file.', 'The browser could not read it. Try pasting the JSON instead.'); return; }
     loadedName = file.name;
     if (text.length > MAX_TEXTAREA_SIZE) {
       loadedText = text; $('rp-text').value = '';

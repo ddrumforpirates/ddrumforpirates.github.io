@@ -193,7 +193,7 @@ function copyToClipboard(text, btn) {
   }).catch(() => {
     const ta = Object.assign(document.createElement('textarea'), { value: text });
     Object.assign(ta.style, { position: 'fixed', opacity: '0' });
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    ta.setAttribute('data-dd-privacy', 'hidden'); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
     btn.classList.add('copied'); setTimeout(() => btn.classList.remove('copied'), 1800);
   });
 }
@@ -1784,8 +1784,9 @@ function processFile(file) {
     }
     const analysis = analyzeHAR(data, file.name);
     if (window.DD_RUM) {
+      // Telemetry: counts/sizes only. Never the filename or anything from inside the HAR.
       window.DD_RUM.addAction('har_analyzed', {
-        filename: analysis.filename, totalEntries: analysis.totalEntries,
+        fileSizeBytes: file.size, totalEntries: analysis.totalEntries,
         intakeErrors: analysis.intakeErrors.length, ddCookies: analysis.ddCookies.length,
         hasRumSession: !!analysis.sessionId, replayRequests: analysis.replayRequests.length,
         warnings: analysis.warnings.length,

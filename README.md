@@ -103,6 +103,21 @@ Once live, `yourGitHubUsername.github.io` is your RUM testing ground — visit i
 
 ---
 
+## 🔒 Privacy — Session Replay & the Tools
+
+All pages initialise RUM with `defaultPrivacyLevel: 'mask'` and `enablePrivacyForActionName: true`, so text, inputs and click-target names are masked in Session Replay.
+
+The two tools (`/tools/har-analyzer/`, `/tools/rum-event-parser/`) handle uploaded/pasted data, so they go further:
+
+- Result containers use `data-dd-privacy="hidden"`, so parsed content is not recorded at all.
+- Files are parsed locally in the browser; nothing is uploaded. Custom RUM actions send counts/sizes only (never filenames or contents).
+- JSON parse errors report only a line/column, never the browser's message (which quotes part of the input).
+- A RUM `beforeSend` hook redacts error messages/stacks and action names, and `forwardErrorsToLogs` is off on these pages.
+
+If you add a new page or widget that displays user-supplied data, put `data-dd-privacy="hidden"` on its container.
+
+---
+
 ## 🏴 Already Have a GitHub Pages Site?
 
 GitHub only allows **one** `username.github.io` per user account. Here's the workaround:

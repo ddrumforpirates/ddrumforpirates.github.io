@@ -1,0 +1,264 @@
+diff --git a/README.md b/README.md
+index d4b4f83..3fb1024 100644
+--- a/README.md
++++ b/README.md
+@@ -103,6 +103,21 @@ Once live, `yourGitHubUsername.github.io` is your RUM testing ground — visit i
+ 
+ ---
+ 
++## 🔒 Privacy — Session Replay & the Tools
++
++All pages initialise RUM with `defaultPrivacyLevel: 'mask'` and `enablePrivacyForActionName: true`, so text, inputs and click-target names are masked in Session Replay.
++
++The two tools (`/tools/har-analyzer/`, `/tools/rum-event-parser/`) handle uploaded/pasted data, so they go further:
++
++- Result containers use `data-dd-privacy="hidden"`, so parsed content is not recorded at all.
++- Files are parsed locally in the browser; nothing is uploaded. Custom RUM actions send counts/sizes only (never filenames or contents).
++- JSON parse errors report only a line/column, never the browser's message (which quotes part of the input).
++- A RUM `beforeSend` hook redacts error messages/stacks and action names, and `forwardErrorsToLogs` is off on these pages.
++
++If you add a new page or widget that displays user-supplied data, put `data-dd-privacy="hidden"` on its container.
++
++---
++
+ ## 🏴 Already Have a GitHub Pages Site?
+ 
+ GitHub only allows **one** `username.github.io` per user account. Here's the workaround:
+diff --git a/games/tic.html b/games/tic.html
+index 6708492..e7ee75d 100644
+--- a/games/tic.html
++++ b/games/tic.html
+@@ -51,7 +51,8 @@
+       trackResources: true,
+       trackLongTasks: true,
+       trackingConsent: 'granted',
+-      defaultPrivacyLevel: 'allow',
++      defaultPrivacyLevel: 'mask',
++      enablePrivacyForActionName: true,
+       //allowFallbackToLocalStorage: 'true',
+       sessionPersistence: 'local-storage',
+       trackAnonymousUser: false,
+diff --git a/index.html b/index.html
+index cc152a4..e49226c 100644
+--- a/index.html
++++ b/index.html
+@@ -44,7 +44,8 @@
+       trackResources: true,
+       trackLongTasks: true,
+       trackingConsent: 'granted',
+-      defaultPrivacyLevel: 'allow',
++      defaultPrivacyLevel: 'mask',
++      enablePrivacyForActionName: true,
+       sessionPersistence: 'local-storage',
+       trackAnonymousUser: false,
+       trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
+diff --git a/rumresources/index.html b/rumresources/index.html
+index 8862325..3632ad1 100644
+--- a/rumresources/index.html
++++ b/rumresources/index.html
+@@ -43,7 +43,8 @@
+       trackResources: true,
+       trackLongTasks: true,
+       trackingConsent: 'granted',
+-      defaultPrivacyLevel: 'allow',
++      defaultPrivacyLevel: 'mask',
++      enablePrivacyForActionName: true,
+       sessionPersistence: 'local-storage',
+       trackAnonymousUser: false,
+       trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
+diff --git a/test/index.html b/test/index.html
+index 227ed00..6159649 100644
+--- a/test/index.html
++++ b/test/index.html
+@@ -41,7 +41,8 @@
+       trackResources: true,
+       trackLongTasks: true,
+       trackingConsent: 'granted',
+-      defaultPrivacyLevel: 'allow',
++      defaultPrivacyLevel: 'mask',
++      enablePrivacyForActionName: true,
+       //allowFallbackToLocalStorage: 'true',
+       sessionPersistence: 'local-storage',
+       trackAnonymousUser: false,
+diff --git a/tools/har-analyzer/har-analyzer.js b/tools/har-analyzer/har-analyzer.js
+index cd8b25e..6a02882 100644
+--- a/tools/har-analyzer/har-analyzer.js
++++ b/tools/har-analyzer/har-analyzer.js
+@@ -193,7 +193,7 @@ function copyToClipboard(text, btn) {
+   }).catch(() => {
+     const ta = Object.assign(document.createElement('textarea'), { value: text });
+     Object.assign(ta.style, { position: 'fixed', opacity: '0' });
+-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
++    ta.setAttribute('data-dd-privacy', 'hidden'); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+     btn.classList.add('copied'); setTimeout(() => btn.classList.remove('copied'), 1800);
+   });
+ }
+@@ -1784,8 +1784,9 @@ function processFile(file) {
+     }
+     const analysis = analyzeHAR(data, file.name);
+     if (window.DD_RUM) {
++      // Telemetry: counts/sizes only. Never the filename or anything from inside the HAR.
+       window.DD_RUM.addAction('har_analyzed', {
+-        filename: analysis.filename, totalEntries: analysis.totalEntries,
++        fileSizeBytes: file.size, totalEntries: analysis.totalEntries,
+         intakeErrors: analysis.intakeErrors.length, ddCookies: analysis.ddCookies.length,
+         hasRumSession: !!analysis.sessionId, replayRequests: analysis.replayRequests.length,
+         warnings: analysis.warnings.length,
+diff --git a/tools/har-analyzer/index.html b/tools/har-analyzer/index.html
+index a38cae5..408b01f 100644
+--- a/tools/har-analyzer/index.html
++++ b/tools/har-analyzer/index.html
+@@ -46,10 +46,24 @@
+       trackResources: true,
+       trackLongTasks: true,
+       trackingConsent: 'granted',
+-      defaultPrivacyLevel: 'allow',
++      defaultPrivacyLevel: 'mask',
++      enablePrivacyForActionName: true,
+       sessionPersistence: 'local-storage',
+       trackAnonymousUser: false,
+-      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
++      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name })),
++      // Uploaded HAR / JSON content stays in the browser. This is a safety net so an
++      // error message or click-target name derived from that content can never be
++      // sent to Datadog either.
++      beforeSend: (event) => {
++        if (event.type === 'error' && event.error) {
++          event.error.message = '[redacted]';
++          event.error.stack = '[redacted]';
++        }
++        if (event.type === 'action' && event.action && event.action.target) {
++          event.action.target.name = '[redacted]';
++        }
++        return true;
++      }
+     });
+     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
+     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('page_type', 'tools');
+@@ -66,7 +80,7 @@
+     window.DD_LOGS && window.DD_LOGS.init({
+       clientToken: 'pub02889030d6147b469c6736c64e609b35',
+       site: 'datadoghq.com',
+-      forwardErrorsToLogs: true,
++      forwardErrorsToLogs: false, // error text can quote uploaded content
+       sessionSampleRate: 100
+     });
+   </script>
+@@ -154,7 +168,8 @@
+         </div>
+ 
+         <!-- Results -->
+-        <div id="results" aria-live="polite"></div>
++        <!-- data-dd-privacy="hidden": HAR contents (URLs, cookies, session IDs, headers, bodies) must never be recorded by this site's own Session Replay -->
++        <div id="results" aria-live="polite" data-dd-privacy="hidden"></div>
+ 
+       </div>
+     </section>
+@@ -178,7 +193,7 @@
+         </div>
+ 
+         <!-- Query Results -->
+-        <div id="query-results" aria-live="polite"></div>
++        <div id="query-results" aria-live="polite" data-dd-privacy="hidden"></div>
+ 
+       </div>
+     </section>
+diff --git a/tools/rum-event-parser/index.html b/tools/rum-event-parser/index.html
+index 7afdc28..5c066b2 100644
+--- a/tools/rum-event-parser/index.html
++++ b/tools/rum-event-parser/index.html
+@@ -46,10 +46,24 @@
+       trackResources: true,
+       trackLongTasks: true,
+       trackingConsent: 'granted',
+-      defaultPrivacyLevel: 'allow',
++      defaultPrivacyLevel: 'mask',
++      enablePrivacyForActionName: true,
+       sessionPersistence: 'local-storage',
+       trackAnonymousUser: false,
+-      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
++      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name })),
++      // Uploaded HAR / JSON content stays in the browser. This is a safety net so an
++      // error message or click-target name derived from that content can never be
++      // sent to Datadog either.
++      beforeSend: (event) => {
++        if (event.type === 'error' && event.error) {
++          event.error.message = '[redacted]';
++          event.error.stack = '[redacted]';
++        }
++        if (event.type === 'action' && event.action && event.action.target) {
++          event.action.target.name = '[redacted]';
++        }
++        return true;
++      }
+     });
+     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
+     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('page_type', 'tools');
+@@ -66,7 +80,7 @@
+     window.DD_LOGS && window.DD_LOGS.init({
+       clientToken: 'pub02889030d6147b469c6736c64e609b35',
+       site: 'datadoghq.com',
+-      forwardErrorsToLogs: true,
++      forwardErrorsToLogs: false, // error text can quote uploaded content
+       sessionSampleRate: 100
+     });
+   </script>
+@@ -120,7 +134,7 @@
+         <summary>
+           <i class="bi bi-chevron-right" aria-hidden="true"></i>
+           <span class="rp-input-title">Input</span>
+-          <span id="rp-input-status" class="rp-input-status"></span>
++          <span id="rp-input-status" class="rp-input-status" data-dd-privacy="hidden"></span>
+           <span class="rp-input-edit">Edit input</span>
+         </summary>
+ 
+diff --git a/tools/rum-event-parser/rum-event-parser.js b/tools/rum-event-parser/rum-event-parser.js
+index b282942..b8fade1 100644
+--- a/tools/rum-event-parser/rum-event-parser.js
++++ b/tools/rum-event-parser/rum-event-parser.js
+@@ -124,7 +124,7 @@
+     const fallback = () => {
+       const ta = Object.assign(document.createElement('textarea'), { value: text });
+       Object.assign(ta.style, { position: 'fixed', opacity: '0' });
+-      document.body.appendChild(ta); ta.select();
++      ta.setAttribute('data-dd-privacy', 'hidden'); document.body.appendChild(ta); ta.select();
+       try { document.execCommand('copy'); done(); } catch (_) { /* nothing more we can do */ }
+       document.body.removeChild(ta);
+     };
+@@ -638,6 +638,18 @@
+   }
+   function clearError() { const b = $('rp-error'); b.hidden = true; b.textContent = ''; }
+ 
++  // Browsers quote a slice of the input in JSON.parse errors, e.g.
++  //   Unexpected token 'x', "jane@acme.co"... is not valid JSON
++  // so never show or log err.message. Report only where parsing failed.
++  function describeParseError(err) {
++    const msg = String((err && err.message) || '');
++    let m = msg.match(/line (\d+) column (\d+)/i);
++    if (m) return 'Parse error at line ' + m[1] + ', column ' + m[2] + '.';
++    m = msg.match(/position (\d+)/i);
++    if (m) return 'Parse error at character ' + m[1] + '.';
++    return 'The text could not be parsed as JSON.';
++  }
++
+   let loadedText = null;     // set when a large file is loaded without echoing it into the textarea
+   let loadedName = '';
+ 
+@@ -653,7 +665,7 @@
+       root = parseJsonLoose(text);
+     } catch (err) {
+       $('rp-results').textContent = '';
+-      showError('That doesn’t look like valid JSON.', err.message);
++      showError('That doesn’t look like valid JSON.', describeParseError(err));
+       return;
+     }
+     const rawEvents = extractEvents(root);
+@@ -686,7 +698,7 @@
+     if (!file) return;
+     if (file.size > MAX_INPUT_BYTES) { showError('That file is too large.', fmtBytes(file.size) + ' — the limit is ' + fmtBytes(MAX_INPUT_BYTES) + '.'); return; }
+     let text;
+-    try { text = await file.text(); } catch (e) { showError('Couldn’t read that file.', e.message); return; }
++    try { text = await file.text(); } catch (e) { showError('Couldn’t read that file.', 'The browser could not read it. Try pasting the JSON instead.'); return; }
+     loadedName = file.name;
+     if (text.length > MAX_TEXTAREA_SIZE) {
+       loadedText = text; $('rp-text').value = '';

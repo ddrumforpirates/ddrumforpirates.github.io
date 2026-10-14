@@ -46,10 +46,24 @@
       trackResources: true,
       trackLongTasks: true,
       trackingConsent: 'granted',
-      defaultPrivacyLevel: 'allow',
+      defaultPrivacyLevel: 'mask',
+      enablePrivacyForActionName: true,
       sessionPersistence: 'local-storage',
       trackAnonymousUser: false,
-      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name }))
+      trackResourceHeaders: DD_RUM.DEFAULT_TRACKED_RESOURCE_HEADERS.map((name) => ({ name })),
+      // Uploaded HAR / JSON content stays in the browser. This is a safety net so an
+      // error message or click-target name derived from that content can never be
+      // sent to Datadog either.
+      beforeSend: (event) => {
+        if (event.type === 'error' && event.error) {
+          event.error.message = '[redacted]';
+          event.error.stack = '[redacted]';
+        }
+        if (event.type === 'action' && event.action && event.action.target) {
+          event.action.target.name = '[redacted]';
+        }
+        return true;
+      }
     });
     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('arrrrr', 'im-a-pirate');
     window.DD_RUM && window.DD_RUM.setGlobalContextProperty('page_type', 'tools');
@@ -66,7 +80,7 @@
     window.DD_LOGS && window.DD_LOGS.init({
       clientToken: 'pub02889030d6147b469c6736c64e609b35',
       site: 'datadoghq.com',
-      forwardErrorsToLogs: true,
+      forwardErrorsToLogs: false, // error text can quote uploaded content
       sessionSampleRate: 100
     });
   </script>
@@ -154,7 +168,8 @@
         </div>
 
         <!-- Results -->
-        <div id="results" aria-live="polite"></div>
+        <!-- data-dd-privacy="hidden": HAR contents (URLs, cookies, session IDs, headers, bodies) must never be recorded by this site's own Session Replay -->
+        <div id="results" aria-live="polite" data-dd-privacy="hidden"></div>
 
       </div>
     </section>
@@ -178,7 +193,7 @@
         </div>
 
         <!-- Query Results -->
-        <div id="query-results" aria-live="polite"></div>
+        <div id="query-results" aria-live="polite" data-dd-privacy="hidden"></div>
 
       </div>
     </section>

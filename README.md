@@ -65,16 +65,7 @@ Click **Fork** in the top-right corner of this page to get your own copy.
 
 ### Step 2 — Inject your RUM credentials
 
-Open each of the files below and replace the placeholder client token and application ID with the values saved in Prerequisite Step 3:
-
-| File | |
-|---|---|
-| `/index.html` | 📄 Main page |
-| `/games/tic.html` | 🎮 Tic-tac-toe game |
-| `/test/index.html` | 🧪 Test page |
-| `/rumresources/index.html` | 📊 RUM Resources page |
-| `/tools/har-analyzer/index.html` | 🛠️ HAR Analyzer Tool |
-| `/tools/rum-event-parser/index.html` | 🛠️ JSON Parser Tool |
+Go to `js/dd-config.js` and update the values accordingly
 
 ---
 

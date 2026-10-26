@@ -604,12 +604,15 @@
 
   /* ── 6. Input wiring ────────────────────────────────────────────────── */
 
+  // Follow the site's central config (js/dd-config.js) so the sample never goes stale.
+  const SAMPLE_APP_ID = (window.DD_CONFIG && window.DD_CONFIG.applicationId) || '00000000-0000-0000-0000-000000000000';
+  const SAMPLE_VERSION = (window.DD_CONFIG && window.DD_CONFIG.version) || '2.2.0';
   const SAMPLE = {
     id: 'AwAAAaENBDHhy9HdlAAAABhBYUVOQkRIaEFBQzZ6Z3YxYnljYjQ5QkkAAAAkZjFhMTBkMDQtZmRjOC00M2YzLTg0MmMtYWZiNzAzZGJiZTBlAAAAAA',
     content: {
       timestamp: '2026-10-05T17:02:21.153Z',
       tags: ['source:browser', 'service:datadogrum-pirates-landing-page', 'env:test', 'sdk_version:7.15.0',
-             'datadog.submission_auth:client_token', 'version:2.0.0', 'first_version:2.0.0'],
+             'datadog.submission_auth:client_token', 'version:' + SAMPLE_VERSION, 'first_version:' + SAMPLE_VERSION],
       service: ['datadogrum-pirates-landing-page'],
       attributes: {
         os: { name: 'Mac OS X', version: '10.15.7', version_major: '10' },
@@ -629,7 +632,7 @@
         last_user_interaction_time: 1791219793334,
         geo: { continent: 'North America', country: 'United States', country_iso_code: 'US', city: 'New York City',
                latitude: 40.71427, longitude: -74.00597, country_subdivision: 'New York', country_subdivision_iso_code: 'US-NY' },
-        application: { name: 'DatadogRUM-Pirates', short_name: 'datadogrum_pirates', id: '012a1d19-38df-4e55-9412-6ceb64e72490' },
+        application: { name: 'DatadogRUM-Pirates', short_name: 'datadogrum_pirates', id: SAMPLE_APP_ID },
         connectivity: { effective_type: '4g' },
         service: 'datadogrum-pirates-landing-page',
         browser: { name: 'Chrome', version: '154.0.0.0', version_major: '154' },

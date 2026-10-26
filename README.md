@@ -104,6 +104,18 @@ Once live, `yourGitHubUsername.github.io` is your RUM testing ground — visit i
 
 ---
 
+## ⚙️ Central Datadog config
+
+The RUM **application ID**, **client token**, **site** and release **version** live in one file: [`js/dd-config.js`](js/dd-config.js). Every page loads it before the Datadog SDK and reads `DD_CONFIG.*` in its `DD_RUM.init` / `DD_LOGS.init` call.
+
+- **New app / token / site:** edit `js/dd-config.js` only. If you change `site`, also update the region in the SDK `<script>` URL (`…/us1/v7/…`).
+- **Releasing:** bump `version` in `js/dd-config.js` (currently `2.2.0`).
+- **Adding a page:** add `<script src="/js/dd-config.js"></script>` before the SDK script and use `DD_CONFIG.*` instead of literals.
+- `service` and `env` stay per-page on purpose (landing page, tools and rumresources report as different services).
+- A RUM client token is public by design, so keeping it in a committed JS file is expected.
+
+---
+
 ## 🔒 Privacy — Session Replay & the Tools
 
 All pages initialise RUM with `defaultPrivacyLevel: 'mask'` and `enablePrivacyForActionName: true`, so text, inputs and click-target names are masked in Session Replay.

@@ -31,15 +31,17 @@
   <link href="/tools/har-analyzer/har-analyzer.css" rel="stylesheet" />
 
   <!-- Datadog RUM -->
+  <!-- Central Datadog config (app id / client token / site / version) -->
+  <script src="/js/dd-config.js"></script>
   <script src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-rum.js" type="text/javascript" crossorigin></script>
   <script>
-    window.DD_RUM && window.DD_RUM.init({
-      clientToken: 'pub02889030d6147b469c6736c64e609b35',
-      applicationId: '012a1d19-38df-4e55-9412-6ceb64e72490',
-      site: 'datadoghq.com',
+    window.DD_RUM && window.DD_CONFIG && window.DD_RUM.init({
+      clientToken: DD_CONFIG.clientToken,
+      applicationId: DD_CONFIG.applicationId,
+      site: DD_CONFIG.site,
       service: 'datadogrum-pirates-tools',
       env: 'test',
-      version: '2.0.0',
+      version: DD_CONFIG.version,
       sessionSampleRate: 100,
       sessionReplaySampleRate: 100,
       trackUserInteractions: true,

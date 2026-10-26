@@ -1,0 +1,612 @@
+diff -ruN -U1 '--exclude=.git' '--exclude=privacy-changes.patch' '--exclude=.DS_Store' a/README.md b/README.md
+--- a/README.md	2026-10-26 17:16:59.410674283 +0000
++++ b/README.md	2026-10-26 17:20:59.969644363 +0000
+@@ -107,14 +107,24 @@
+ 
+ All pages initialise RUM with `defaultPrivacyLevel: 'mask'` and `enablePrivacyForActionName: true`, so text, inputs and click-target names are masked in Session Replay.
+ 
+-The two tools (`/tools/har-analyzer/`, `/tools/rum-event-parser/`) handle uploaded/pasted data, so they go further:
++The two tools (`/tools/har-analyzer/`, `/tools/rum-event-parser/`) handle uploaded/pasted data, so they go further.
++
++**Telemetry (what could reach Datadog)**
+ 
+ - Result containers use `data-dd-privacy="hidden"`, so parsed content is not recorded at all.
+-- Files are parsed locally in the browser; nothing is uploaded. Custom RUM actions send counts/sizes only (never filenames or contents).
++- Files are parsed locally in the browser; nothing is uploaded. Custom RUM actions send counts/sizes only (never filenames or contents); event types are reported only if they are on a fixed allowlist.
+ - JSON parse errors report only a line/column, never the browser's message (which quotes part of the input).
+-- A RUM `beforeSend` hook redacts error messages/stacks and action names, and `forwardErrorsToLogs` is off on these pages.
++- A RUM `beforeSend` hook redacts error message/stack/causes/fingerprint and click-target names. The Logs SDK is not loaded on the tools.
++
++**In-page redaction (what you see, copy and export)** — `js/redact.js`
++
++- **Redact PII in this view** is on by default. It masks emails, IPv4/IPv6 addresses, JWTs and bearer tokens, card numbers (Luhn-checked), SSNs, phone numbers, `Authorization`/`Cookie`/`X-Forwarded-For`-style headers, `dd-api-key` (first 4 characters only), `usr.*` and other personal fields by key name, geo city/coordinates, and URL query-string values and fragments.
++- Masked values become stable tags such as `[email:3fa91c]`, so two different values stay distinguishable.
++- **Copy summary and Export JSON are always redacted**, whatever the toggle says, and omit the original filename.
++- Datadog session/view/application IDs, trace IDs, SDK versions and service/env/version are intentionally left visible — they are what the tools exist to show.
++- Limits: pattern matching cannot recognise free-text names, street addresses or opaque customer IDs inside arbitrary strings. Review before sharing a screenshot.
+ 
+-If you add a new page or widget that displays user-supplied data, put `data-dd-privacy="hidden"` on its container.
++If you add a new page or widget that displays user-supplied data, put `data-dd-privacy="hidden"` on its container, escape everything you put in `innerHTML`, and route displayed values through `PIIRedact`.
+ 
+ ---
+ 
+diff -ruN -U1 '--exclude=.git' '--exclude=privacy-changes.patch' '--exclude=.DS_Store' a/js/redact.js b/js/redact.js
+--- a/js/redact.js	1970-01-01 00:00:00.000000000 +0000
++++ b/js/redact.js	2026-10-26 17:17:33.849102255 +0000
+@@ -0,0 +1,253 @@
++/* =============================================
++   PII redaction – shared by the HAR Analyzer and the RUM Event Parser.
++   Pure client-side, no storage, no network. Nothing here is ever sent to
++   Datadog or anywhere else.
++
++   Model
++   - Uploaded data is kept untouched in memory. A *redacted view copy* is built
++     for rendering whenever the "Redact PII in view" toggle is on (default).
++   - Exports and "Copy summary" are ALWAYS built from the redacted copy,
++     regardless of the toggle.
++   - Redaction is deterministic: the same value always maps to the same short
++     tag (e.g. [email:3fa91c]) so you can still tell two values apart / correlate
++     them without seeing them.
++
++   What is NOT redacted on purpose: Datadog session / view / application IDs,
++   trace IDs, SDK versions, service / env / version tags. Those are what these
++   tools exist to show, and they are not personal data on their own.
++
++   Limits: pattern matching cannot recognise free-text names, street addresses
++   or opaque customer IDs inside arbitrary strings. Keys named like usr.*,
++   email, ip, phone, etc. are caught by name; everything else is caught by
++   value pattern only.
++   ============================================= */
++
++(function (global) {
++  'use strict';
++
++  /* ── state ─────────────────────────────────────────────────────────── */
++  let enabled = true;                    // in-memory only, resets on reload
++  const listeners = [];
++
++  /* ── hashing → short stable tag ────────────────────────────────────── */
++  function hash(s) {                     // FNV-1a 32-bit
++    let h = 0x811c9dc5;
++    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
++    return (h >>> 0).toString(16).padStart(8, '0').slice(0, 6);
++  }
++  const tag = (kind, v) => '[' + kind + ':' + hash(String(v)) + ']';
++  const pseudo = (v) => tag('redacted', v);
++
++  function maskToken(t) {
++    const s = String(t);
++    return s.length > 4 ? s.slice(0, 4) + '…[masked]' : '[masked]';
++  }
++
++  /* ── value patterns ────────────────────────────────────────────────── */
++  const RE_EMAIL  = /[A-Za-z0-9._%+\-]+(?:@|%40)[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}/g;
++  const RE_JWT    = /\beyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*/g;
++  const RE_AUTH   = /\b(Bearer|Basic|Token)\s+[A-Za-z0-9._~+\/=\-]{8,}/gi;
++  // not preceded by [\w./-] so "Chrome/154.0.0.0" or "v1.2.3.4" is left alone
++  const RE_IPV4   = /(?<![\w./-])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w]|\.\d)/g;
++  const RE_IPV6   = /(?<![\w:])(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?|::(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})(?![\w:])/gi;
++  const RE_SSN    = /(?<![\d-])\d{3}-\d{2}-\d{4}(?![\d-])/g;
++  const RE_PHONE  = /(?<![\w.])(?:\+?\d{1,3}[ .-])?\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}(?![\w])/g;
++  const RE_CARD   = /(?<![\d.])(?:\d[ -]?){12,18}\d(?![\d])/g;
++
++  function luhn(digits) {
++    let sum = 0, alt = false;
++    for (let i = digits.length - 1; i >= 0; i--) {
++      let n = digits.charCodeAt(i) - 48;
++      if (alt) { n *= 2; if (n > 9) n -= 9; }
++      sum += n; alt = !alt;
++    }
++    return sum % 10 === 0;
++  }
++
++  // Free-text scrub. Safe on any string; returns the input untouched if nothing matches.
++  function text(s) {
++    if (typeof s !== 'string' || !s) return s;
++    return s
++      .replace(RE_JWT,   (m) => tag('jwt', m))
++      .replace(RE_AUTH,  (m, scheme) => scheme + ' [redacted]')
++      .replace(RE_EMAIL, (m) => tag('email', m.toLowerCase().replace('%40', '@')))
++      .replace(RE_SSN,   (m) => tag('ssn', m))
++      .replace(RE_CARD,  (m) => {
++        const d = m.replace(/[ -]/g, '');
++        // 13–19 digits, Luhn-valid, a real card prefix, and either grouped or 15/16 long.
++        // Keeps 19-digit trace IDs and 13-digit epoch-ms timestamps from being swallowed.
++        if (d.length < 13 || d.length > 19 || !/^[3-6]/.test(d) || !luhn(d)) return m;
++        if (d === m && d.length !== 15 && d.length !== 16) return m;
++        return tag('card', d);
++      })
++      .replace(RE_IPV4,  (m) => tag('ip', m))
++      .replace(RE_IPV6,  (m) => tag('ip', m.toLowerCase()))
++      .replace(RE_PHONE, (m) => tag('phone', m));
++  }
++
++  /* ── URLs ──────────────────────────────────────────────────────────── */
++  // Query-param values are dropped unless the param is known to be non-personal.
++  const SAFE_PARAMS = new Set([
++    'ddsource', 'ddtags', 'ddforward', 'dd-evp-origin', 'dd-evp-origin-version', 'dd-request-id',
++    'batch_time', 'api-version', 'dd_session_id', 'session_id', 'dd_app_id', 'app_id', 'application_id',
++    'type', 'format', 'from', 'to', 'interval', 'limit', 'offset', 'version', 'env', 'service',
++  ]);
++
++  function url(u) {
++    if (typeof u !== 'string' || !u) return u;
++    const s = u.trim();
++    if (/^data:|^blob:/i.test(s)) return s.slice(0, s.indexOf(',') > 0 ? s.indexOf(',') : 12) + '…[omitted]';
++    let parsed = null, relative = false;
++    try { parsed = new URL(s); }
++    catch (_) { try { parsed = new URL(s, 'http://relative.invalid'); relative = true; } catch (__) { /* leave null */ } }
++
++    if (!parsed) {                                       // not a URL at all: cut query/fragment, scrub the rest
++      return text(s.replace(/[?#].*$/, '')) + (/[?#]/.test(s) ? '?[redacted]' : '');
++    }
++
++    const pairs = [];
++    parsed.searchParams.forEach((v, k) => {
++      const lk = k.toLowerCase();
++      if (lk === 'dd-api-key' || /api[_-]?key|client[_-]?token/.test(lk)) pairs.push(k + '=' + maskToken(v));
++      else if (SAFE_PARAMS.has(lk)) pairs.push(k + '=' + text(v));
++      else pairs.push(k + '=[redacted]');
++    });
++
++    let path;
++    try { path = text(decodeURIComponent(parsed.pathname)); } catch (_) { path = text(parsed.pathname); }
++    const origin = relative ? '' : parsed.protocol + '//' + parsed.host;  // userinfo and #fragment dropped
++    return origin + path + (pairs.length ? '?' + pairs.join('&') : '');
++  }
++
++  /* ── headers ───────────────────────────────────────────────────────── */
++  const HEADER_FULL = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-forwarded-for|x-real-ip|forwarded|true-client-ip|cf-connecting-ip|x-amz-security-token)$/i;
++  const HEADER_URL  = /^(referer|referrer|origin|location|content-location)$/i;
++
++  function header(name, value) {
++    const n = String(name || '');
++    const v = value == null ? '' : String(value);
++    if (/^dd-api-key$/i.test(n)) return maskToken(v);
++    if (HEADER_FULL.test(n)) return '[redacted]';
++    if (HEADER_URL.test(n)) return url(v);
++    return text(v);
++  }
++
++  /* ── structured data ───────────────────────────────────────────────── */
++  const SENSITIVE_KEY = /(password|passwd|secret|token|api[_-]?key|app[_-]?key|authorization|cookie|credit[_-]?card|card[_-]?number|cvv|ssn)/i;
++  const KEY_IS_TOKEN  = /(api[_-]?key|client[_-]?token)/i;     // partially shown (first 4 chars) instead of blanked
++  // Key *paths* whose value is personal data by name
++  const PII_PATH = new RegExp([
++    '(^|\\.)usr(\\.|$)',                                         // RUM user object: all of it
++    '(^|\\.)account\\.name$',
++    '(^|\\.)url_query(\\.|$)',                                   // RUM view/action query params
++    '(^|[._])(e[-_]?mail|phone(_?number)?|mobile|first_?name|last_?name|full_?name|display_?name|user_?name|user_?id|userid|dob|birth_?date|address|street|postal_?code|zip(_?code)?|ip|ip_?address|client_?ip|remote_?addr|latitude|longitude|lat|lon|lng)$',
++    '(^|\\.)geo\\.(city|country_subdivision|country_subdivision_iso_code)$',
++    '(^|\\.)client\\.ip$',
++  ].join('|'), 'i');
++  const URL_KEY     = /(^|[._])(url|referrer|href|uri)(_path|_details)?$/i;
++  // "key:value" tags / group-by values whose KEY looks personal
++  const PII_TAG_KEY = /(e[-_]?mail|username|user[_-]?name|user[_-]?id|usr[._]|(^|[._-])user$|client[_-]?ip|(^|[._-])ip([_-]?address)?$|phone|customer|member|first[_-]?name|last[_-]?name|full[_-]?name|ssn)/i;
++
++  function str(s, path) {
++    const last = path ? path.split('.').pop() : '';
++    if (last && SENSITIVE_KEY.test(last)) return KEY_IS_TOKEN.test(last) ? maskToken(s) : '[redacted]';
++    if (path && PII_PATH.test(path)) return pseudo(s);
++    if (/^(https?|wss?|ftp):\/\//i.test(s) || (last && URL_KEY.test(last))) return url(s);
++    const m = s.match(/^([A-Za-z0-9_.@\-]+):([\s\S]+)$/);       // "key:value"
++    if (m) {
++      if (PII_TAG_KEY.test(m[1])) return m[1] + ':' + pseudo(m[2]);
++      if (/^(https?|wss?):\/\//i.test(m[2])) return m[1] + ':' + url(m[2]);
++    }
++    return text(s);
++  }
++
++  function deep(v, path, depth) {
++    path = path || '';
++    depth = depth || 0;
++    if (depth > 60) return '[max depth]';
++    if (Array.isArray(v)) {
++      if (path && PII_PATH.test(path)) return v.map((x) => (x !== null && typeof x === 'object') ? '[redacted]' : pseudo(x));
++      return v.map((x) => deep(x, path, depth + 1));
++    }
++    if (v !== null && typeof v === 'object') {
++      const out = {};
++      // Datadog scalar-query group column: { type:'group', name:'usr.email', values:[…] }
++      const piiGroup = v.type === 'group' && typeof v.name === 'string' && (PII_TAG_KEY.test(v.name) || PII_PATH.test(v.name));
++      for (const k of Object.keys(v)) {
++        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
++        if (piiGroup && k === 'values' && Array.isArray(v[k])) {
++          out[k] = v[k].map((x) => Array.isArray(x) ? x.map(pseudo) : (x == null ? x : pseudo(x)));
++          continue;
++        }
++        out[k] = deep(v[k], path ? path + '.' + k : k, depth + 1);
++      }
++      return out;
++    }
++    if (typeof v === 'string') return str(v, path);
++    if ((typeof v === 'number' || typeof v === 'boolean') && path) {
++      const last = path.split('.').pop();
++      if (SENSITIVE_KEY.test(last) || PII_PATH.test(path)) return pseudo(v);
++    }
++    return v;
++  }
++
++  // Response / request bodies: JSON → key-aware redaction, anything else → free-text scrub.
++  function body(t) {
++    if (typeof t !== 'string' || !t) return t;
++    const s = t.trim();
++    if (/^[\[{]/.test(s)) {
++      try { return JSON.stringify(deep(JSON.parse(s)), null, 2); } catch (_) { /* fall through */ }
++    }
++    return text(t);
++  }
++
++  /* ── toggle UI ─────────────────────────────────────────────────────── */
++  function injectStyle() {
++    if (document.getElementById('pii-redact-style')) return;
++    const st = document.createElement('style');
++    st.id = 'pii-redact-style';
++    st.textContent =
++      '.pii-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;margin:0 auto 1rem;max-width:1100px;' +
++      'padding:.6rem .9rem;border:1px solid rgba(128,128,128,.4);border-radius:8px;background:rgba(128,128,128,.12);font-size:.85rem}' +
++      '.pii-bar label{display:flex;align-items:center;gap:.5rem;margin:0;cursor:pointer;font-weight:600}' +
++      '.pii-bar input{width:1rem;height:1rem;cursor:pointer}' +
++      '.pii-bar .pii-note{opacity:.8}' +
++      '.pii-bar.is-off{border-color:#d9822b;background:rgba(217,130,43,.14)}';
++    document.head.appendChild(st);
++  }
++
++  function mountToggle(host, opts) {
++    if (!host) return;
++    injectStyle();
++    const bar = document.createElement('div');
++    bar.className = 'pii-bar';
++    bar.setAttribute('role', 'group');
++    bar.setAttribute('aria-label', 'PII redaction');
++    const label = document.createElement('label');
++    const box = document.createElement('input');
++    box.type = 'checkbox'; box.id = 'pii-redact'; box.checked = enabled;
++    const span = document.createElement('span');
++    span.textContent = 'Redact PII in this view';
++    label.append(box, span);
++    const note = document.createElement('span');
++    note.className = 'pii-note';
++    note.textContent = 'Emails, IPs, tokens, auth headers, user fields and URL query values are masked. ' +
++                       'Copy summary and Export are always redacted.';
++    bar.append(label, note);
++    box.addEventListener('change', () => { setEnabled(box.checked); bar.classList.toggle('is-off', !box.checked); });
++    if (opts && opts.prepend) host.insertBefore(bar, host.firstChild); else host.appendChild(bar);
++  }
++
++  function setEnabled(v) {
++    enabled = !!v;
++    listeners.forEach((fn) => { try { fn(enabled); } catch (_) { /* ignore */ } });
++  }
++
++  global.PIIRedact = {
++    text, url, header, body, deep, str, maskToken, pseudo,
++    isEnabled: () => enabled,
++    setEnabled,
++    onChange: (fn) => listeners.push(fn),
++    mountToggle,
++  };
++})(typeof window !== 'undefined' ? window : globalThis);
+diff -ruN -U1 '--exclude=.git' '--exclude=privacy-changes.patch' '--exclude=.DS_Store' a/tools/har-analyzer/har-analyzer.js b/tools/har-analyzer/har-analyzer.js
+--- a/tools/har-analyzer/har-analyzer.js	2026-10-26 17:16:59.387896240 +0000
++++ b/tools/har-analyzer/har-analyzer.js	2026-10-26 17:18:15.631181512 +0000
+@@ -167,6 +167,58 @@
+     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+ }
+ 
++// ── PII redaction (see /js/redact.js) ──────────────────────────────────────
++// The analysis object built from the upload stays untouched. Rendering uses a
++// redacted *view copy*; Export JSON and Copy summary ALWAYS use one.
++const PII = window.PIIRedact;
++
++function redactAnalysis(a) {
++  const c = structuredClone(a);
++  const u = x => PII.url(x);
++  const hdrs = list => (list || []).map(h => ({ name: h.name, value: PII.header(h.name, h.value) }));
++  const req = e => ({ ...e, url: u(e.url), reqHeaders: hdrs(e.reqHeaders), resHeaders: hdrs(e.resHeaders), bodyText: PII.body(e.bodyText) });
++
++  c.ddCookies = (c.ddCookies || []).map(k => ({
++    ...k, value: PII.text(k.value), decoded: k.decoded ? PII.text(k.decoded) : k.decoded,
++    segments: PII.deep(k.segments || {}, 'cookie'), url: u(k.url),
++  }));
++  c.intakeErrors   = (c.intakeErrors   || []).map(req);
++  c.intakeSuccess  = (c.intakeSuccess  || []).map(req);
++  c.replayRequests = (c.replayRequests || []).map(req);
++  c.sdkLoads       = (c.sdkLoads       || []).map(l => ({ ...l, url: u(l.url) }));
++  c.apmCorrelations = (c.apmCorrelations || []).map(x => ({ ...x, url: u(x.url) }));
++  if (c.proxyInfo) c.proxyInfo.clientToken = c.proxyInfo.clientToken ? PII.maskToken(c.proxyInfo.clientToken) : c.proxyInfo.clientToken;
++  if (c.initConfig) c.initConfig = PII.deep(c.initConfig, 'init');
++  if (c.bodyInsights) {
++    const b = c.bodyInsights;
++    b.services = (b.services || []).map(PII.text); b.versions = (b.versions || []).map(PII.text); b.envs = (b.envs || []).map(PII.text);
++    if (b.configuration) b.configuration = PII.deep(b.configuration, 'cfg');
++  }
++  c.warnings = (c.warnings || []).map(w => ({ ...w, msg: PII.text(String(w.msg)), detail: w.detail ? PII.text(String(w.detail)) : w.detail }));
++  return c;
++}
++
++function redactQueryEntry(e) {
++  const jsonOrText = t => (t ? PII.body(t) : t);
++  return {
++    ...e,
++    url: PII.url(e.url),
++    reqJSON: e.reqJSON ? PII.deep(e.reqJSON) : e.reqJSON,
++    respJSON: e.respJSON ? PII.deep(e.respJSON) : e.respJSON,
++    rawReq: jsonOrText(e.rawReq),
++    rawResp: jsonOrText(e.rawResp),
++  };
++}
++
++// A container that rebuilds itself when the redaction toggle flips.
++function liveSlot(build) {
++  const slot = document.createElement('div');
++  const draw = () => { slot.textContent = ''; slot.appendChild(build(PII.isEnabled())); };
++  draw();
++  PII.onChange(draw);
++  return slot;
++}
++
+ function parseCookieHeader(str) {
+   const r = {};
+   str.split(';').forEach(p => {
+@@ -884,7 +936,7 @@
+       if (vol != null) {
+         const volRow = document.createElement('div');
+         volRow.className = 'qi-metric-row';
+-        volRow.innerHTML = `<span class="qi-metric-key">Distinct tag volume</span><span class="qi-metric-val qi-metric-vol">${vol.toLocaleString()}</span>`;
++        volRow.innerHTML = `<span class="qi-metric-key">Distinct tag volume</span><span class="qi-metric-val qi-metric-vol">${escHtml(typeof vol === 'number' ? vol.toLocaleString() : String(vol))}</span>`;
+         block.appendChild(volRow);
+       } else {
+         block.appendChild(renderMetricInfoRow('Distinct tag volume', 'Not available'));
+@@ -1235,7 +1287,7 @@
+       empty.innerHTML = '<i class="bi bi-search"></i> No query or metric requests found in this HAR.<br>Make sure the HAR was captured from <code>app.datadoghq.com</code> with a dashboard open.';
+       group.appendChild(empty);
+     } else {
+-      entries.forEach(entry => group.appendChild(renderQueryCard(entry)));
++      entries.forEach(entry => group.appendChild(liveSlot(redact => renderQueryCard(redact ? redactQueryEntry(entry) : entry))));
+     }
+ 
+     container.prepend(group);
+@@ -1374,7 +1426,7 @@
+     idBlock.className = 'section-block';
+ 
+     const cfg = bodyInsights.configuration || {};
+-    const fmtPct = v => (v == null ? null : `${v}%`);
++    const fmtPct = v => (v == null ? null : escHtml(`${v}%`));
+     const idCard = (label, value, mono = true, accent = false) => `
+       <div class="id-card${accent ? ' id-card-accent' : ''}">
+         <div class="id-card-label">${escHtml(label)}</div>
+@@ -1431,7 +1483,7 @@
+           const low = v === 0;
+           return `<div class="rate-meter">
+             <div class="rate-meter-top"><span>${escHtml(label)}</span><span class="rate-val${low ? ' rate-zero' : ''}">${fmtPct(v)}</span></div>
+-            <div class="rate-track"><span class="rate-fill${low ? ' rate-fill-zero' : ''}" style="width:${Math.max(2, v)}%"></span></div>
++            <div class="rate-track"><span class="rate-fill${low ? ' rate-fill-zero' : ''}" style="width:${Math.max(2, Number(v) || 0)}%"></span></div>
+           </div>`;
+         }).join('')}
+       </div>` : '';
+@@ -1462,7 +1514,7 @@
+           <div class="sdk-card-top">
+             <span class="sdk-type-badge ${ok ? 'ok' : 'err'}">${escHtml(sdk.type)}</span>
+             <span class="sdk-version">${sdk.version ? escHtml(sdk.version) : 'unknown version'}</span>
+-            <span class="sdk-status ${ok ? 'ok' : 'err'}">${sdk.status === 0 ? 'BLOCKED' : sdk.status}</span>
++            <span class="sdk-status ${ok ? 'ok' : 'err'}">${sdk.status === 0 ? 'BLOCKED' : escHtml(String(sdk.status))}</span>
+           </div>
+           <div class="sdk-url" title="${escHtml(sdk.url)}">${escHtml(sdk.url)}</div>
+           <div class="sdk-meta">
+@@ -1708,10 +1760,11 @@
+ 
+ // ── Export helpers ─────────────────────────────────────────────────────────
+ 
+-function buildTextSummary(a) {
++function buildTextSummary(raw) {
++  const a = redactAnalysis(raw);           // always redacted, whatever the on-screen toggle says
+   const warns = a.warnings || [];
+   return [
+-    `=== Datadog HAR Analysis: ${a.filename} ===`,
++    `=== Datadog HAR Analysis ===`,   // filename deliberately omitted
+     `Total requests:        ${a.totalEntries}`,
+     `Intake ok:             ${a.intakeSuccess.length}`,
+     `Intake errors:         ${a.intakeErrors.length}`,
+@@ -1742,9 +1795,10 @@
+   ].join('\n');
+ }
+ 
+-function exportJSON(analysis) {
++function exportJSON(rawAnalysis) {
++  const analysis = redactAnalysis(rawAnalysis);   // always redacted, whatever the on-screen toggle says
+   const data = {
+-    filename: analysis.filename, totalEntries: analysis.totalEntries,
++    redacted: true, totalEntries: analysis.totalEntries,
+     rum: { sessionId: analysis.sessionId, appId: analysis.appId },
+     proxy: analysis.proxyInfo || null,
+     identity: analysis.bodyInsights || null,
+@@ -1756,7 +1810,7 @@
+   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+   const url  = URL.createObjectURL(blob);
+   const a    = document.createElement('a');
+-  a.href = url; a.download = analysis.filename.replace(/\.har$/i, '') + '-dd-analysis.json';
++  a.href = url; a.download = 'har-dd-analysis.json';
+   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+ }
+ 
+@@ -1792,7 +1846,7 @@
+         warnings: analysis.warnings.length,
+       });
+     }
+-    results.prepend(renderFileCard(analysis));
++    results.prepend(liveSlot(redact => renderFileCard(redact ? redactAnalysis(analysis) : analysis)));
+   };
+   reader.readAsText(file);
+ }
+@@ -1803,6 +1857,7 @@
+ // ── Init ───────────────────────────────────────────────────────────────────
+ 
+ (function init() {
++  PII.mountToggle(document.getElementById('main'), { prepend: true });
+   const tabs     = document.querySelectorAll('.har-tab');
+   const tabPanes = {
+     rum:     document.getElementById('tab-rum'),
+diff -ruN -U1 '--exclude=.git' '--exclude=privacy-changes.patch' '--exclude=.DS_Store' a/tools/har-analyzer/index.html b/tools/har-analyzer/index.html
+--- a/tools/har-analyzer/index.html	2026-10-26 17:16:59.387773513 +0000
++++ b/tools/har-analyzer/index.html	2026-10-26 17:18:15.636757935 +0000
+@@ -58,8 +58,14 @@
+         if (event.type === 'error' && event.error) {
+           event.error.message = '[redacted]';
+           event.error.stack = '[redacted]';
++          // other error fields can also quote uploaded content
++          delete event.error.causes;
++          delete event.error.fingerprint;
++          delete event.error.handling_stack;
+         }
+-        if (event.type === 'action' && event.action && event.action.target) {
++        // Click-target names are derived from the DOM, which holds uploaded content.
++        // Custom actions (addAction) carry only our own fixed names, so keep those.
++        if (event.type === 'action' && event.action && event.action.target && event.action.type !== 'custom') {
+           event.action.target.name = '[redacted]';
+         }
+         return true;
+@@ -74,16 +80,7 @@
+     });
+   </script>
+ 
+-  <!-- Datadog Logs -->
+-  <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-logs.js"></script>
+-  <script>
+-    window.DD_LOGS && window.DD_LOGS.init({
+-      clientToken: 'pub02889030d6147b469c6736c64e609b35',
+-      site: 'datadoghq.com',
+-      forwardErrorsToLogs: false, // error text can quote uploaded content
+-      sessionSampleRate: 100
+-    });
+-  </script>
++  <!-- Datadog Logs SDK intentionally not loaded on the tools: nothing here logs, and error text can quote uploaded content. -->
+ </head>
+ 
+ <!-- body class="tools" scopes .tools #hero overrides in har-analyzer.css -->
+@@ -219,6 +216,9 @@
+   <!-- Main JS -->
+   <script src="/js/main.js"></script>
+ 
++  <!-- PII redaction (shared) -->
++  <script src="/js/redact.js"></script>
++
+   <!-- HAR Analyzer JS -->
+   <script src="/tools/har-analyzer/har-analyzer.js"></script>
+ 
+diff -ruN -U1 '--exclude=.git' '--exclude=privacy-changes.patch' '--exclude=.DS_Store' a/tools/rum-event-parser/index.html b/tools/rum-event-parser/index.html
+--- a/tools/rum-event-parser/index.html	2026-10-26 17:16:59.389619543 +0000
++++ b/tools/rum-event-parser/index.html	2026-10-26 17:18:15.637113827 +0000
+@@ -58,8 +58,14 @@
+         if (event.type === 'error' && event.error) {
+           event.error.message = '[redacted]';
+           event.error.stack = '[redacted]';
++          // other error fields can also quote uploaded content
++          delete event.error.causes;
++          delete event.error.fingerprint;
++          delete event.error.handling_stack;
+         }
+-        if (event.type === 'action' && event.action && event.action.target) {
++        // Click-target names are derived from the DOM, which holds uploaded content.
++        // Custom actions (addAction) carry only our own fixed names, so keep those.
++        if (event.type === 'action' && event.action && event.action.target && event.action.type !== 'custom') {
+           event.action.target.name = '[redacted]';
+         }
+         return true;
+@@ -74,16 +80,7 @@
+     });
+   </script>
+ 
+-  <!-- Datadog Logs -->
+-  <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-logs.js"></script>
+-  <script>
+-    window.DD_LOGS && window.DD_LOGS.init({
+-      clientToken: 'pub02889030d6147b469c6736c64e609b35',
+-      site: 'datadoghq.com',
+-      forwardErrorsToLogs: false, // error text can quote uploaded content
+-      sessionSampleRate: 100
+-    });
+-  </script>
++  <!-- Datadog Logs SDK intentionally not loaded on the tools: nothing here logs, and error text can quote uploaded content. -->
+ </head>
+ 
+ <!-- .rum-parser scopes the hero + layout overrides in rum-event-parser.css -->
+@@ -190,6 +187,9 @@
+   <!-- Main JS -->
+   <script src="/js/main.js"></script>
+ 
++  <!-- PII redaction (shared) -->
++  <script src="/js/redact.js"></script>
++
+   <!-- RUM Event Parser JS -->
+   <script src="/tools/rum-event-parser/rum-event-parser.js"></script>
+ 
+diff -ruN -U1 '--exclude=.git' '--exclude=privacy-changes.patch' '--exclude=.DS_Store' a/tools/rum-event-parser/rum-event-parser.js b/tools/rum-event-parser/rum-event-parser.js
+--- a/tools/rum-event-parser/rum-event-parser.js	2026-10-26 17:16:59.389206927 +0000
++++ b/tools/rum-event-parser/rum-event-parser.js	2026-10-26 17:18:27.397080700 +0000
+@@ -59,6 +59,12 @@
+   const DATE_KEY     = /(^|_)(timestamp|date|time|at)$/i;
+   const SIZE_KEY     = /(size|bytes)$/i;
+ 
++  const PII = window.PIIRedact;   // /js/redact.js
++
++  // Event types we are willing to report to our own RUM. Anything else comes from
++  // the uploaded file and could be arbitrary text, so it is never sent.
++  const TELEMETRY_EVENT_TYPES = new Set(['session', 'view', 'action', 'error', 'resource', 'long_task', 'vital', 'event']);
++
+   /* ── Small helpers ──────────────────────────────────────────────────── */
+ 
+   const $ = (id) => document.getElementById(id);
+@@ -403,6 +409,17 @@
+ 
+   const state = { events: [], index: 0, sectionEls: [], source: 'paste' };
+ 
++  // What gets rendered: the parsed events, or a redacted copy of them. The originals in
++  // state.events are never modified, so flipping the toggle is lossless.
++  let viewCache = { src: null, on: null, list: null };
++  function viewEvents() {
++    const on = PII.isEnabled();
++    if (viewCache.src !== state.events || viewCache.on !== on) {
++      viewCache = { src: state.events, on, list: on ? state.events.map((e) => normalize(PII.deep(e.raw))) : state.events };
++    }
++    return viewCache.list;
++  }
++
+   function eventLabel(ev) {
+     const a = ev.attrs, t = ev.type;
+     const g = (o, ...ks) => ks.reduce((x, k) => (x == null ? x : x[k]), o);
+@@ -508,13 +525,14 @@
+ 
+   function renderResults() {
+     const host = $('rp-results');
+-    const ev = state.events[state.index];
++    const evs = viewEvents();
++    const ev = evs[state.index];
+     host.textContent = '';
+ 
+     // multi-event switcher
+     if (state.events.length > 1) {
+       const sel = h('select', { id: 'rp-select', class: 'rp-select', 'aria-label': 'Choose event' },
+-        state.events.map((e, i) => {
++        evs.map((e, i) => {
+           const d = eventDate(e); const l = eventLabel(e);
+           return h('option', { value: String(i), text: '#' + (i + 1) + '  ·  ' + e.type + (l ? '  ·  ' + l : '') + (d ? '  ·  ' + d.toLocaleTimeString() : '') });
+         }));
+@@ -688,7 +706,7 @@
+ 
+     // Telemetry for this site's own RUM: counts only, never the pasted content.
+     if (window.DD_RUM) {
+-      window.DD_RUM.addAction('rum_event_parsed', { source, event_count: events.length, event_types: types.slice(0, 10), input_bytes: text.length });
++      window.DD_RUM.addAction('rum_event_parsed', { source, event_count: events.length, event_types: types.filter((t) => TELEMETRY_EVENT_TYPES.has(t)).slice(0, 10), input_bytes: text.length });
+     }
+   }
+ 
+@@ -710,6 +728,8 @@
+   }
+ 
+   function init() {
++    PII.mountToggle(document.querySelector('.rp-wrap'), { prepend: true });
++    PII.onChange(() => { if (state.events.length) renderResults(); });
+     const text = $('rp-text');
+     const drop = $('rp-drop');
+ 

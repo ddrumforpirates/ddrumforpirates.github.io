@@ -107,14 +107,24 @@ Once live, `yourGitHubUsername.github.io` is your RUM testing ground — visit i
 
 All pages initialise RUM with `defaultPrivacyLevel: 'mask'` and `enablePrivacyForActionName: true`, so text, inputs and click-target names are masked in Session Replay.
 
-The two tools (`/tools/har-analyzer/`, `/tools/rum-event-parser/`) handle uploaded/pasted data, so they go further:
+The two tools (`/tools/har-analyzer/`, `/tools/rum-event-parser/`) handle uploaded/pasted data, so they go further.
+
+**Telemetry (what could reach Datadog)**
 
 - Result containers use `data-dd-privacy="hidden"`, so parsed content is not recorded at all.
-- Files are parsed locally in the browser; nothing is uploaded. Custom RUM actions send counts/sizes only (never filenames or contents).
+- Files are parsed locally in the browser; nothing is uploaded. Custom RUM actions send counts/sizes only (never filenames or contents); event types are reported only if they are on a fixed allowlist.
 - JSON parse errors report only a line/column, never the browser's message (which quotes part of the input).
-- A RUM `beforeSend` hook redacts error messages/stacks and action names, and `forwardErrorsToLogs` is off on these pages.
+- A RUM `beforeSend` hook redacts error message/stack/causes/fingerprint and click-target names. The Logs SDK is not loaded on the tools.
 
-If you add a new page or widget that displays user-supplied data, put `data-dd-privacy="hidden"` on its container.
+**In-page redaction (what you see, copy and export)** — `js/redact.js`
+
+- **Redact PII in this view** is on by default. It masks emails, IPv4/IPv6 addresses, JWTs and bearer tokens, card numbers (Luhn-checked), SSNs, phone numbers, `Authorization`/`Cookie`/`X-Forwarded-For`-style headers, `dd-api-key` (first 4 characters only), `usr.*` and other personal fields by key name, geo city/coordinates, and URL query-string values and fragments.
+- Masked values become stable tags such as `[email:3fa91c]`, so two different values stay distinguishable.
+- **Copy summary and Export JSON are always redacted**, whatever the toggle says, and omit the original filename.
+- Datadog session/view/application IDs, trace IDs, SDK versions and service/env/version are intentionally left visible — they are what the tools exist to show.
+- Limits: pattern matching cannot recognise free-text names, street addresses or opaque customer IDs inside arbitrary strings. Review before sharing a screenshot.
+
+If you add a new page or widget that displays user-supplied data, put `data-dd-privacy="hidden"` on its container, escape everything you put in `innerHTML`, and route displayed values through `PIIRedact`.
 
 ---
 

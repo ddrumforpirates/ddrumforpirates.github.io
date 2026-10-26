@@ -59,6 +59,12 @@
   const DATE_KEY     = /(^|_)(timestamp|date|time|at)$/i;
   const SIZE_KEY     = /(size|bytes)$/i;
 
+  const PII = window.PIIRedact;   // /js/redact.js
+
+  // Event types we are willing to report to our own RUM. Anything else comes from
+  // the uploaded file and could be arbitrary text, so it is never sent.
+  const TELEMETRY_EVENT_TYPES = new Set(['session', 'view', 'action', 'error', 'resource', 'long_task', 'vital', 'event']);
+
   /* ── Small helpers ──────────────────────────────────────────────────── */
 
   const $ = (id) => document.getElementById(id);
@@ -403,6 +409,17 @@
 
   const state = { events: [], index: 0, sectionEls: [], source: 'paste' };
 
+  // What gets rendered: the parsed events, or a redacted copy of them. The originals in
+  // state.events are never modified, so flipping the toggle is lossless.
+  let viewCache = { src: null, on: null, list: null };
+  function viewEvents() {
+    const on = PII.isEnabled();
+    if (viewCache.src !== state.events || viewCache.on !== on) {
+      viewCache = { src: state.events, on, list: on ? state.events.map((e) => normalize(PII.deep(e.raw))) : state.events };
+    }
+    return viewCache.list;
+  }
+
   function eventLabel(ev) {
     const a = ev.attrs, t = ev.type;
     const g = (o, ...ks) => ks.reduce((x, k) => (x == null ? x : x[k]), o);
@@ -508,13 +525,14 @@
 
   function renderResults() {
     const host = $('rp-results');
-    const ev = state.events[state.index];
+    const evs = viewEvents();
+    const ev = evs[state.index];
     host.textContent = '';
 
     // multi-event switcher
     if (state.events.length > 1) {
       const sel = h('select', { id: 'rp-select', class: 'rp-select', 'aria-label': 'Choose event' },
-        state.events.map((e, i) => {
+        evs.map((e, i) => {
           const d = eventDate(e); const l = eventLabel(e);
           return h('option', { value: String(i), text: '#' + (i + 1) + '  ·  ' + e.type + (l ? '  ·  ' + l : '') + (d ? '  ·  ' + d.toLocaleTimeString() : '') });
         }));
@@ -688,7 +706,7 @@
 
     // Telemetry for this site's own RUM: counts only, never the pasted content.
     if (window.DD_RUM) {
-      window.DD_RUM.addAction('rum_event_parsed', { source, event_count: events.length, event_types: types.slice(0, 10), input_bytes: text.length });
+      window.DD_RUM.addAction('rum_event_parsed', { source, event_count: events.length, event_types: types.filter((t) => TELEMETRY_EVENT_TYPES.has(t)).slice(0, 10), input_bytes: text.length });
     }
   }
 
@@ -710,6 +728,8 @@
   }
 
   function init() {
+    PII.mountToggle(document.querySelector('.rp-wrap'), { prepend: true });
+    PII.onChange(() => { if (state.events.length) renderResults(); });
     const text = $('rp-text');
     const drop = $('rp-drop');
 

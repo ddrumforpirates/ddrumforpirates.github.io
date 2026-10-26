@@ -167,6 +167,58 @@ function escHtml(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ── PII redaction (see /js/redact.js) ──────────────────────────────────────
+// The analysis object built from the upload stays untouched. Rendering uses a
+// redacted *view copy*; Export JSON and Copy summary ALWAYS use one.
+const PII = window.PIIRedact;
+
+function redactAnalysis(a) {
+  const c = structuredClone(a);
+  const u = x => PII.url(x);
+  const hdrs = list => (list || []).map(h => ({ name: h.name, value: PII.header(h.name, h.value) }));
+  const req = e => ({ ...e, url: u(e.url), reqHeaders: hdrs(e.reqHeaders), resHeaders: hdrs(e.resHeaders), bodyText: PII.body(e.bodyText) });
+
+  c.ddCookies = (c.ddCookies || []).map(k => ({
+    ...k, value: PII.text(k.value), decoded: k.decoded ? PII.text(k.decoded) : k.decoded,
+    segments: PII.deep(k.segments || {}, 'cookie'), url: u(k.url),
+  }));
+  c.intakeErrors   = (c.intakeErrors   || []).map(req);
+  c.intakeSuccess  = (c.intakeSuccess  || []).map(req);
+  c.replayRequests = (c.replayRequests || []).map(req);
+  c.sdkLoads       = (c.sdkLoads       || []).map(l => ({ ...l, url: u(l.url) }));
+  c.apmCorrelations = (c.apmCorrelations || []).map(x => ({ ...x, url: u(x.url) }));
+  if (c.proxyInfo) c.proxyInfo.clientToken = c.proxyInfo.clientToken ? PII.maskToken(c.proxyInfo.clientToken) : c.proxyInfo.clientToken;
+  if (c.initConfig) c.initConfig = PII.deep(c.initConfig, 'init');
+  if (c.bodyInsights) {
+    const b = c.bodyInsights;
+    b.services = (b.services || []).map(PII.text); b.versions = (b.versions || []).map(PII.text); b.envs = (b.envs || []).map(PII.text);
+    if (b.configuration) b.configuration = PII.deep(b.configuration, 'cfg');
+  }
+  c.warnings = (c.warnings || []).map(w => ({ ...w, msg: PII.text(String(w.msg)), detail: w.detail ? PII.text(String(w.detail)) : w.detail }));
+  return c;
+}
+
+function redactQueryEntry(e) {
+  const jsonOrText = t => (t ? PII.body(t) : t);
+  return {
+    ...e,
+    url: PII.url(e.url),
+    reqJSON: e.reqJSON ? PII.deep(e.reqJSON) : e.reqJSON,
+    respJSON: e.respJSON ? PII.deep(e.respJSON) : e.respJSON,
+    rawReq: jsonOrText(e.rawReq),
+    rawResp: jsonOrText(e.rawResp),
+  };
+}
+
+// A container that rebuilds itself when the redaction toggle flips.
+function liveSlot(build) {
+  const slot = document.createElement('div');
+  const draw = () => { slot.textContent = ''; slot.appendChild(build(PII.isEnabled())); };
+  draw();
+  PII.onChange(draw);
+  return slot;
+}
+
 function parseCookieHeader(str) {
   const r = {};
   str.split(';').forEach(p => {
@@ -884,7 +936,7 @@ function renderQueryCard(entry) {
       if (vol != null) {
         const volRow = document.createElement('div');
         volRow.className = 'qi-metric-row';
-        volRow.innerHTML = `<span class="qi-metric-key">Distinct tag volume</span><span class="qi-metric-val qi-metric-vol">${vol.toLocaleString()}</span>`;
+        volRow.innerHTML = `<span class="qi-metric-key">Distinct tag volume</span><span class="qi-metric-val qi-metric-vol">${escHtml(typeof vol === 'number' ? vol.toLocaleString() : String(vol))}</span>`;
         block.appendChild(volRow);
       } else {
         block.appendChild(renderMetricInfoRow('Distinct tag volume', 'Not available'));
@@ -1235,7 +1287,7 @@ function processQueryFile(file) {
       empty.innerHTML = '<i class="bi bi-search"></i> No query or metric requests found in this HAR.<br>Make sure the HAR was captured from <code>app.datadoghq.com</code> with a dashboard open.';
       group.appendChild(empty);
     } else {
-      entries.forEach(entry => group.appendChild(renderQueryCard(entry)));
+      entries.forEach(entry => group.appendChild(liveSlot(redact => renderQueryCard(redact ? redactQueryEntry(entry) : entry))));
     }
 
     container.prepend(group);
@@ -1374,7 +1426,7 @@ function renderFileCard(analysis) {
     idBlock.className = 'section-block';
 
     const cfg = bodyInsights.configuration || {};
-    const fmtPct = v => (v == null ? null : `${v}%`);
+    const fmtPct = v => (v == null ? null : escHtml(`${v}%`));
     const idCard = (label, value, mono = true, accent = false) => `
       <div class="id-card${accent ? ' id-card-accent' : ''}">
         <div class="id-card-label">${escHtml(label)}</div>
@@ -1431,7 +1483,7 @@ function renderFileCard(analysis) {
           const low = v === 0;
           return `<div class="rate-meter">
             <div class="rate-meter-top"><span>${escHtml(label)}</span><span class="rate-val${low ? ' rate-zero' : ''}">${fmtPct(v)}</span></div>
-            <div class="rate-track"><span class="rate-fill${low ? ' rate-fill-zero' : ''}" style="width:${Math.max(2, v)}%"></span></div>
+            <div class="rate-track"><span class="rate-fill${low ? ' rate-fill-zero' : ''}" style="width:${Math.max(2, Number(v) || 0)}%"></span></div>
           </div>`;
         }).join('')}
       </div>` : '';
@@ -1462,7 +1514,7 @@ function renderFileCard(analysis) {
           <div class="sdk-card-top">
             <span class="sdk-type-badge ${ok ? 'ok' : 'err'}">${escHtml(sdk.type)}</span>
             <span class="sdk-version">${sdk.version ? escHtml(sdk.version) : 'unknown version'}</span>
-            <span class="sdk-status ${ok ? 'ok' : 'err'}">${sdk.status === 0 ? 'BLOCKED' : sdk.status}</span>
+            <span class="sdk-status ${ok ? 'ok' : 'err'}">${sdk.status === 0 ? 'BLOCKED' : escHtml(String(sdk.status))}</span>
           </div>
           <div class="sdk-url" title="${escHtml(sdk.url)}">${escHtml(sdk.url)}</div>
           <div class="sdk-meta">
@@ -1708,10 +1760,11 @@ function renderFileCard(analysis) {
 
 // ── Export helpers ─────────────────────────────────────────────────────────
 
-function buildTextSummary(a) {
+function buildTextSummary(raw) {
+  const a = redactAnalysis(raw);           // always redacted, whatever the on-screen toggle says
   const warns = a.warnings || [];
   return [
-    `=== Datadog HAR Analysis: ${a.filename} ===`,
+    `=== Datadog HAR Analysis ===`,   // filename deliberately omitted
     `Total requests:        ${a.totalEntries}`,
     `Intake ok:             ${a.intakeSuccess.length}`,
     `Intake errors:         ${a.intakeErrors.length}`,
@@ -1742,9 +1795,10 @@ function buildTextSummary(a) {
   ].join('\n');
 }
 
-function exportJSON(analysis) {
+function exportJSON(rawAnalysis) {
+  const analysis = redactAnalysis(rawAnalysis);   // always redacted, whatever the on-screen toggle says
   const data = {
-    filename: analysis.filename, totalEntries: analysis.totalEntries,
+    redacted: true, totalEntries: analysis.totalEntries,
     rum: { sessionId: analysis.sessionId, appId: analysis.appId },
     proxy: analysis.proxyInfo || null,
     identity: analysis.bodyInsights || null,
@@ -1756,7 +1810,7 @@ function exportJSON(analysis) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = analysis.filename.replace(/\.har$/i, '') + '-dd-analysis.json';
+  a.href = url; a.download = 'har-dd-analysis.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
@@ -1792,7 +1846,7 @@ function processFile(file) {
         warnings: analysis.warnings.length,
       });
     }
-    results.prepend(renderFileCard(analysis));
+    results.prepend(liveSlot(redact => renderFileCard(redact ? redactAnalysis(analysis) : analysis)));
   };
   reader.readAsText(file);
 }
@@ -1803,6 +1857,7 @@ function handleQueryFiles(files) { Array.from(files).forEach(processQueryFile); 
 // ── Init ───────────────────────────────────────────────────────────────────
 
 (function init() {
+  PII.mountToggle(document.getElementById('main'), { prepend: true });
   const tabs     = document.querySelectorAll('.har-tab');
   const tabPanes = {
     rum:     document.getElementById('tab-rum'),

@@ -58,8 +58,14 @@
         if (event.type === 'error' && event.error) {
           event.error.message = '[redacted]';
           event.error.stack = '[redacted]';
+          // other error fields can also quote uploaded content
+          delete event.error.causes;
+          delete event.error.fingerprint;
+          delete event.error.handling_stack;
         }
-        if (event.type === 'action' && event.action && event.action.target) {
+        // Click-target names are derived from the DOM, which holds uploaded content.
+        // Custom actions (addAction) carry only our own fixed names, so keep those.
+        if (event.type === 'action' && event.action && event.action.target && event.action.type !== 'custom') {
           event.action.target.name = '[redacted]';
         }
         return true;
@@ -74,16 +80,7 @@
     });
   </script>
 
-  <!-- Datadog Logs -->
-  <script type="text/javascript" src="https://www.datadoghq-browser-agent.com/us1/v7/datadog-logs.js"></script>
-  <script>
-    window.DD_LOGS && window.DD_LOGS.init({
-      clientToken: 'pub02889030d6147b469c6736c64e609b35',
-      site: 'datadoghq.com',
-      forwardErrorsToLogs: false, // error text can quote uploaded content
-      sessionSampleRate: 100
-    });
-  </script>
+  <!-- Datadog Logs SDK intentionally not loaded on the tools: nothing here logs, and error text can quote uploaded content. -->
 </head>
 
 <!-- body class="tools" scopes .tools #hero overrides in har-analyzer.css -->
@@ -218,6 +215,9 @@
 
   <!-- Main JS -->
   <script src="/js/main.js"></script>
+
+  <!-- PII redaction (shared) -->
+  <script src="/js/redact.js"></script>
 
   <!-- HAR Analyzer JS -->
   <script src="/tools/har-analyzer/har-analyzer.js"></script>
